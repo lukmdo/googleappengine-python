@@ -59,8 +59,8 @@ from google.appengine.api import appinfo
 from google.appengine.api import appinfo_includes
 from google.appengine.api import backendinfo
 from google.appengine.api import croninfo
+from google.appengine.api import dispatchinfo
 from google.appengine.api import dosinfo
-from google.appengine.api import pagespeedinfo
 from google.appengine.api import queueinfo
 from google.appengine.api import validation
 from google.appengine.api import yaml_errors
@@ -76,7 +76,6 @@ except ImportError:
 from google.appengine.tools import bulkloader
 
 
-MAX_FILES_TO_CLONE = 100
 LIST_DELIMITER = '\n'
 TUPLE_DELIMITER = '|'
 BACKENDS_ACTION = 'backends'
@@ -128,6 +127,7 @@ MILLION = 1000 * 1000
 DEFAULT_RESOURCE_LIMITS = {
     'max_file_size': 32 * MILLION,
     'max_blob_size': 32 * MILLION,
+    'max_files_to_clone': 100,
     'max_total_file_size': 150 * MEGA,
     'max_file_count': 10000,
 }
@@ -355,6 +355,7 @@ def GetResourceLimits(rpcserver, config):
   """
   resource_limits = DEFAULT_RESOURCE_LIMITS.copy()
   resource_limits.update(GetRemoteResourceLimits(rpcserver, config))
+  logging.debug('Using resource limits: %s' % resource_limits)
   return resource_limits
 
 
@@ -751,6 +752,20 @@ class UpdateCheck(object):
     return nag.opt_in
 
 
+def MigratePython27Notice():
+  """Encourages the user to migrate from Python 2.5 to Python 2.7.
+
+  Prints a message to sys.stdout. The caller should have tested that the user is
+  using Python 2.5, so as not to spuriously display this message.
+  """
+  print (
+      'Notice: The Python 2.7 runtime is now available, and comes with a '
+      'range of new features including concurrent requests and more '
+      'libraries. Learn how simple it is to migrate your application to '
+      'Python 2.7 at '
+      'https://developers.google.com/appengine/docs/python/python25/migrate27.')
+
+
 class IndexDefinitionUpload(object):
   """Provides facilities to upload index definitions to the hosting service."""
 
@@ -896,23 +911,26 @@ class PagespeedEntryUpload(object):
 class DefaultVersionSet(object):
   """Provides facilities to set the default (serving) version."""
 
-  def __init__(self, rpcserver, config):
+  def __init__(self, rpcserver, app_id, version):
     """Creates a new DefaultVersionSet.
 
     Args:
       rpcserver: The RPC server to use. Should be an instance of a subclass of
         AbstractRpcServer.
-      config: The AppInfoExternal object derived from the app.yaml file.
+      app_id: The application to make the change to.
+      version: The version to set as the default.
     """
     self.rpcserver = rpcserver
-    self.config = config
+    self.app_id = app_id
+    self.version = version
 
   def SetVersion(self):
     """Sets the default version."""
-    StatusUpdate('Setting default version to %s.' % (self.config.version,))
+    StatusUpdate('Setting default version of application %s to %s.'
+                 % (self.app_id, self.version))
     self.rpcserver.Send('/api/appversion/setdefault',
-                        app_id=self.config.application,
-                        version=self.config.version)
+                        app_id=self.app_id,
+                        version=self.version)
 
 
 class IndexOperation(object):
@@ -1882,11 +1900,12 @@ class AppVersionUpload(object):
       StatusUpdate('Cloning %d %s file%s.' %
                    (len(files), file_type, len(files) != 1 and 's' or ''))
 
-      for i in xrange(0, len(files), MAX_FILES_TO_CLONE):
-        if i > 0 and i % MAX_FILES_TO_CLONE == 0:
+      max_files = self.resource_limits['max_files_to_clone']
+      for i in xrange(0, len(files), max_files):
+        if i > 0 and i % max_files == 0:
           StatusUpdate('Cloned %d files.' % i)
 
-        chunk = files[i:min(len(files), i + MAX_FILES_TO_CLONE)]
+        chunk = files[i:min(len(files), i + max_files)]
         result = self.Send(url, payload=BuildClonePostBody(chunk))
         if result:
           files_to_upload.update(dict(
@@ -2130,7 +2149,7 @@ class AppVersionUpload(object):
 
     path = ''
     try:
-      resource_limits = GetResourceLimits(self.rpcserver, self.config)
+      self.resource_limits = GetResourceLimits(self.rpcserver, self.config)
 
       StatusUpdate('Scanning files on local disk.')
       num_files = 0
@@ -2140,9 +2159,9 @@ class AppVersionUpload(object):
         try:
           file_length = GetFileLength(file_handle)
           if file_classification.IsApplicationFile():
-            max_size = resource_limits['max_file_size']
+            max_size = self.resource_limits['max_file_size']
           else:
-            max_size = resource_limits['max_blob_size']
+            max_size = self.resource_limits['max_blob_size']
           if file_length > max_size:
             logging.error('Ignoring file \'%s\': Too long '
                           '(max %d bytes, file is %d bytes)',
@@ -2386,7 +2405,10 @@ class AppCfgApp(object):
                opener=open,
                file_iterator=FileIterator,
                time_func=time.time,
-               wrap_server_error_message=True):
+               wrap_server_error_message=True,
+               oauth_client_id=APPCFG_CLIENT_ID,
+               oauth_client_secret=APPCFG_CLIENT_NOTSOSECRET,
+               oauth_scopes=APPCFG_SCOPES):
     """Initializer.  Parses the cmdline and selects the Action to use.
 
     Initializes all of the attributes described in the class docstring.
@@ -2414,6 +2436,14 @@ class AppCfgApp(object):
           urllib2.HTTPError exceptions in Run() are wrapped with
           '--- begin server output ---' and '--- end server output ---',
           otherwise the error message is printed as is.
+      oauth_client_id: The client ID of the project providing Auth. Defaults to
+          the SDK default project client ID, the constant APPCFG_CLIENT_ID.
+      oauth_client_secret: The client secret of the project providing Auth.
+          Defaults to the SDK default project client secret, the constant
+          APPCFG_CLIENT_NOTSOSECRET.
+      oauth_scopes: The scope or set of scopes to be accessed by the OAuth2
+          token retrieved. Defaults to APPCFG_SCOPES. Can be a string or list of
+          strings, representing the scope(s) to request.
     """
     self.parser_class = parser_class
     self.argv = argv
@@ -2426,6 +2456,9 @@ class AppCfgApp(object):
     self.throttle_class = throttle_class
     self.time_func = time_func
     self.wrap_server_error_message = wrap_server_error_message
+    self.oauth_client_id = oauth_client_id
+    self.oauth_client_secret = oauth_client_secret
+    self.oauth_scopes = oauth_scopes
 
 
 
@@ -2718,7 +2751,9 @@ class AppCfgApp(object):
 
       get_user_credentials = self.options.oauth2_refresh_token
 
-      source = (APPCFG_CLIENT_ID, APPCFG_CLIENT_NOTSOSECRET, APPCFG_SCOPES)
+      source = (self.oauth_client_id,
+                self.oauth_client_secret,
+                self.oauth_scopes)
 
       appengine_rpc_httplib2.tools.FLAGS.auth_local_webserver = (
           self.options.auth_local_webserver)
@@ -2885,9 +2920,21 @@ class AppCfgApp(object):
       basepath: the directory of the application.
 
     Returns:
-      A CronInfoExternal object or None if the file does not exist.
+      A QueueInfoExternal object or None if the file does not exist.
     """
     return self._ParseYamlFile(basepath, 'queue', queueinfo.LoadSingleQueue)
+
+  def _ParseDispatchYaml(self, basepath):
+    """Parses the dispatch.yaml file.
+
+    Args:
+      basepath: the directory of the application.
+
+    Returns:
+      A DispatchInfoExternal object or None if the file does not exist.
+    """
+    return self._ParseYamlFile(basepath, 'dispatch',
+                               dispatchinfo.LoadSingleDispatch)
 
   def _ParseDosYaml(self, basepath):
     """Parses the dos.yaml file.
@@ -2981,6 +3028,7 @@ class AppCfgApp(object):
     rpcserver = self._GetRpcServer()
     if os.path.isdir(self.basepath):
       appyaml = self._ParseAppInfoFromYaml(self.basepath)
+      has_python25_version = appyaml.runtime == 'python'
 
 
 
@@ -2993,6 +3041,7 @@ class AppCfgApp(object):
       self.UpdateVersion(rpcserver, self.basepath, appyaml)
     else:
       all_files = [self.basepath] + self.args
+      has_python25_version = False
 
       for yaml_path in all_files:
         file_name = os.path.basename(yaml_path)
@@ -3001,6 +3050,8 @@ class AppCfgApp(object):
           self.basepath = '.'
         server_yaml = self._ParseAppInfoFromYaml(self.basepath,
                                                  os.path.splitext(file_name)[0])
+        if server_yaml.runtime == 'python':
+          has_python25_version = True
 
 
 
@@ -3009,6 +3060,9 @@ class AppCfgApp(object):
                       yaml_path)
           continue
         self.UpdateVersion(rpcserver, self.basepath, server_yaml)
+
+    if has_python25_version:
+      MigratePython27Notice()
 
 
     if self.options.backends:
@@ -3147,6 +3201,26 @@ class AppCfgApp(object):
     if queue_yaml:
       queue_upload = QueueEntryUpload(rpcserver, appyaml, queue_yaml)
       queue_upload.DoUpload()
+
+  def UpdateDispatch(self):
+    """Updates new or changed dispatch definitions."""
+    if self.args:
+      self.parser.error('Expected a single <directory> argument.')
+
+    rpcserver = self._GetRpcServer()
+
+
+    dispatch_yaml = self._ParseDispatchYaml(self.basepath)
+    if dispatch_yaml:
+      if self.options.app_id:
+        dispatch_yaml.application = self.options.app_id
+      if not dispatch_yaml.application:
+        self.parser.error('Expected -A app_id when dispatch.yaml.application'
+                          ' is not set.')
+      StatusUpdate('Uploading dispatch entries.')
+      rpcserver.Send('/api/dispatch/update',
+                     app_id=dispatch_yaml.application,
+                     payload=dispatch_yaml.ToYAML())
 
   def UpdateDos(self):
     """Updates any new or changed dos definitions."""
@@ -3345,12 +3419,25 @@ class AppCfgApp(object):
 
   def SetDefaultVersion(self):
     """Sets the default version."""
-    if self.args:
-      self.parser.error('Expected a single <directory> argument.')
+    if len(self.args) == 1:
+      appyaml = self._ParseAppInfoFromYaml(self.args[0])
+      app_id = appyaml.application
+      version = appyaml.version
+    elif len(self.args) == 0:
+      if not (self.options.app_id and self.options.version):
+        self.parser.error(
+            ('Expected a <directory> argument or both --app_id and --version '
+             'flags.'))
+    else:
+      self._PrintHelpAndExit()
 
-    appyaml = self._ParseAppInfoFromYaml(self.basepath)
 
-    version_setter = DefaultVersionSet(self._GetRpcServer(), appyaml)
+    if self.options.app_id:
+      app_id = self.options.app_id
+    if self.options.version:
+      version = self.options.version
+
+    version_setter = DefaultVersionSet(self._GetRpcServer(), app_id, version)
     version_setter.SetVersion()
 
   def RequestLogs(self):
@@ -3446,7 +3533,7 @@ class AppCfgApp(object):
     if self.args:
       self.parser.error('Expected a single <directory> argument.')
     if now is None:
-      now = datetime.datetime.now()
+      now = datetime.datetime.utcnow()
 
     cron_yaml = self._ParseCronYaml(self.basepath)
     if cron_yaml and cron_yaml.cron:
@@ -3454,14 +3541,22 @@ class AppCfgApp(object):
         description = entry.description
         if not description:
           description = '<no description>'
-        print >>output, '\n%s:\nURL: %s\nSchedule: %s' % (description,
-                                                          entry.url,
-                                                          entry.schedule)
+        if not entry.timezone:
+          entry.timezone = 'UTC'
+
+        print >>output, '\n%s:\nURL: %s\nSchedule: %s (%s)' % (description,
+                                                               entry.url,
+                                                               entry.schedule,
+                                                               entry.timezone)
+        if entry.timezone != 'UTC':
+          print >>output, ('Note: Schedules with timezones won\'t be calculated'
+                           ' correctly here')
         schedule = groctimespecification.GrocTimeSpecification(entry.schedule)
+
         matches = schedule.GetMatches(now, self.options.num_runs)
         for match in matches:
           print >>output, '%s, %s from now' % (
-              match.strftime('%Y-%m-%d %H:%M:%S'), match - now)
+              match.strftime('%Y-%m-%d %H:%M:%SZ'), match - now)
 
   def _CronInfoOptions(self, parser):
     """Adds cron_info-specific options to 'parser'.
@@ -3886,6 +3981,15 @@ in production as well as restart any indexes that were not completed."""),
 The 'update_queue' command will update any new, removed or changed task queue
 definitions from the optional queue.yaml file."""),
 
+      'update_dispatch': Action(
+          function='UpdateDispatch',
+          hidden=True,
+          usage='%prog [options] update_dispatch <directory>',
+          short_desc='Update application dispatch definitions.',
+          long_desc="""
+The 'update_dispatch' command will update any new, removed or changed dispatch
+definitions from the optional dispatch.yaml file."""),
+
       'update_dos': Action(
           function='UpdateDos',
           usage='%prog [options] update_dos <directory>',
@@ -4004,6 +4108,7 @@ The 'cron_info' command will display the next 'number' runs (default 5) for
 each cron job defined in the cron.yaml file."""),
 
 
+
       'start': Action(
           function='Start',
           hidden=True,
@@ -4050,12 +4155,13 @@ template for use with upload_data or download_data.""",
 
       'set_default_version': Action(
           function='SetDefaultVersion',
-          usage='%prog [options] set_default_version <directory>',
+          usage='%prog [options] set_default_version [directory]',
           short_desc='Set the default (serving) version.',
           long_desc="""
 The 'set_default_version' command sets the default (serving) version of the app.
-Defaults to using the version specified in app.yaml; use the --version flag to
-override this."""),
+ Defaults to using the application and version specified in app.yaml; use the
+ --app_id and --version flags to override these values.""",
+          uses_basepath=False),
 
       'resource_limits_info': Action(
           function='ResourceLimitsInfo',

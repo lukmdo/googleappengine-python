@@ -578,7 +578,9 @@ def MinimalCompositeIndexForQuery(query, index_defs):
     index_postfix_unordered = index_props[postfix_split:]
 
 
-    if set(prop for prop, dir in index_postfix_unordered) != postfix_unordered:
+
+    if (set(prop for prop, _ in index_postfix_unordered) != postfix_unordered or
+        len(index_postfix_unordered) != len(postfix_unordered)):
       continue
 
 
@@ -655,15 +657,16 @@ def MinimalCompositeIndexForQuery(query, index_defs):
 def IndexYamlForQuery(kind, ancestor, props):
   """Return the composite index definition YAML needed for a query.
 
-  The arguments are the same as the tuples returned by CompositeIndexForQuery,
-  without the last neq element.
+  Given a query, the arguments for this method can be computed with:
+    _, kind, ancestor, props = datastore_index.CompositeIndexForQuery(query)
+    props = datastore_index.GetRecommendedIndexProperties(props)
 
   Args:
     kind: the kind or None
     ancestor: True if this is an ancestor query, False otherwise
-    prop1, prop2, ...: tuples of the form (name, direction) where:
-        name: a property name;
-        direction: datastore_pb.Query_Order.ASCENDING or ...DESCENDING;
+    props: tuples of the form (name, direction) where:
+        name - a property name;
+        direction - datastore_pb.Query_Order.ASCENDING or ...DESCENDING;
 
   Returns:
     A string with the YAML for the composite index needed by the query.
@@ -679,6 +682,33 @@ def IndexYamlForQuery(kind, ancestor, props):
       if direction == DESCENDING:
         yaml.append('    direction: desc')
   return '\n'.join(yaml)
+
+
+def IndexXmlForQuery(kind, ancestor, props):
+  """Return the composite index definition XML needed for a query.
+
+  Given a query, the arguments for this method can be computed with:
+    _, kind, ancestor, props = datastore_index.CompositeIndexForQuery(query)
+    props = datastore_index.GetRecommendedIndexProperties(props)
+
+  Args:
+    kind: the kind or None
+    ancestor: True if this is an ancestor query, False otherwise
+    props: tuples of the form (name, direction) where:
+        name - a property name;
+        direction - datastore_pb.Query_Order.ASCENDING or ...DESCENDING;
+
+  Returns:
+    A string with the XML for the composite index needed by the query.
+  """
+  xml = []
+  xml.append('<datastore-index kind="%s" ancestor="%s">'
+             % (kind, 'true' if ancestor else 'false'))
+  for name, direction in props:
+    xml.append('  <property name="%s" direction="%s" />'
+               % (name, 'asc' if direction == ASCENDING else 'desc'))
+  xml.append('</datastore-index>')
+  return '\n'.join(xml)
 
 
 def IndexDefinitionToProto(app_id, index_definition):

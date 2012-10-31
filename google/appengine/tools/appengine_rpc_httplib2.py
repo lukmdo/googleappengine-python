@@ -189,15 +189,18 @@ class HttpRpcServerHttpLib2(object):
     headers = {}
     if self.extra_headers:
       headers.update(self.extra_headers)
-    headers['Content-Type'] = content_type
 
 
 
     headers['X-appcfg-api-version'] = '1'
 
-    payload = payload or ''
+    if payload is not None:
+      method = 'POST'
 
-    headers['content-length'] = str(len(payload))
+      headers['content-length'] = str(len(payload))
+      headers['Content-Type'] = content_type
+    else:
+      method = 'GET'
     if self.host_override:
       headers['Host'] = self.host_override
 
@@ -217,7 +220,7 @@ class HttpRpcServerHttpLib2(object):
                    url, headers,
                    self.debug_data and payload or payload and 'ELIDED' or '')
       try:
-        response_info, response = self.http.request(url, 'POST', body=payload,
+        response_info, response = self.http.request(url, method, body=payload,
                                                     headers=headers)
       except client.AccessTokenRefreshError, e:
 
@@ -325,8 +328,14 @@ class HttpRpcServerOauth2(HttpRpcServerHttpLib2):
     self.refresh_token = refresh_token
     if refresh_token:
       self.credentials = client.OAuth2Credentials(
-          None, self.client_id, self.client_secret, refresh_token,
-          None, 'https://accounts.google.com/o/oauth2/token', self.user_agent)
+          None,
+          self.client_id,
+          self.client_secret,
+          refresh_token,
+          None,
+          ('https://%s/o/oauth2/token' %
+           os.getenv('APPENGINE_AUTH_SERVER', 'accounts.google.com')),
+          self.user_agent)
     else:
       self.credentials = self.storage.get()
 

@@ -416,13 +416,7 @@ class _LogQueryResult(object):
       self._end_time = time.time() + timeout
 
   def __iter__(self):
-    """Provides an iterator that yields log records one at a time.
-
-    This iterator yields items held locally first, and once these items have
-    been exhausted, it fetches more items via _advance() and yields them. The
-    number of items it holds is min(MAX_ITEMS_PER_FETCH, batch_size) - the
-    latter value can be provided by the user on an initial call to fetch().
-    """
+    """Provides an iterator that yields log records one at a time."""
     while True:
       for log_item in self._logs:
         yield RequestLog(log_item)
@@ -786,7 +780,7 @@ class AppLog(object):
     return self._message
 
 
-_FETCH_KWARGS = frozenset(['prototype_request', 'timeout'])
+_FETCH_KWARGS = frozenset(['prototype_request', 'timeout', 'batch_size'])
 
 
 @datastore_rpc._positional(0)
@@ -797,7 +791,6 @@ def fetch(start_time=None,
           include_incomplete=False,
           include_app_logs=False,
           version_ids=None,
-          batch_size=None,
           **kwargs):
   """Returns an iterator yielding an application's request and application logs.
 
@@ -830,8 +823,6 @@ def fetch(start_time=None,
       results, as a boolean.  Defaults to False.
     version_ids: A list of version ids whose logs should be queried against.
       Defaults to the application's current version id only.
-    batch_size: The number of log records that the iterator for this request
-      should request from the storage infrastructure at a time.
 
   Returns:
     An iterable object containing the logs that the user has queried for.
@@ -864,17 +855,6 @@ def fetch(start_time=None,
       request.mutable_offset().ParseFromString(offset)
     except (TypeError, ProtocolBuffer.ProtocolBufferDecodeError):
       raise InvalidArgumentError('offset must be a string or read-only buffer')
-
-  if batch_size is not None:
-    if not isinstance(batch_size, (int, long)):
-      raise InvalidArgumentError('batch_size must be an integer')
-
-    if batch_size < 1:
-      raise InvalidArgumentError('batch_size must be greater than zero')
-
-    if batch_size > MAX_ITEMS_PER_FETCH:
-      raise InvalidArgumentError('batch_size specified is too large')
-    request.set_count(batch_size)
 
   if minimum_log_level is not None:
     if not isinstance(minimum_log_level, int):
@@ -916,5 +896,17 @@ def fetch(start_time=None,
   if timeout is not None:
     if not isinstance(timeout, (float, int, long)):
       raise InvalidArgumentError('timeout must be a float or integer')
+
+  batch_size = kwargs.get('batch_size')
+  if batch_size is not None:
+    if not isinstance(batch_size, (int, long)):
+      raise InvalidArgumentError('batch_size must be an integer')
+
+    if batch_size < 1:
+      raise InvalidArgumentError('batch_size must be greater than zero')
+
+    if batch_size > MAX_ITEMS_PER_FETCH:
+      raise InvalidArgumentError('batch_size specified is too large')
+    request.set_count(batch_size)
 
   return _LogQueryResult(request, timeout=timeout)

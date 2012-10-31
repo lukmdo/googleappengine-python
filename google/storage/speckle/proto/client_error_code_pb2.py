@@ -194,3 +194,6 @@ class SqlServiceClientError(_message.Message):
 
 
 
+DESCRIPTOR.has_options = True
+DESCRIPTOR._options = _descriptor._ParseOptions(descriptor_pb2.FileOptions(), '\n\033com.google.protos.cloud.sql\020\002 \002(\002P\001')
+

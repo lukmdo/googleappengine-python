@@ -45,6 +45,7 @@ import atexit
 from google.appengine.api import api_base_pb
 from google.appengine.api import apiproxy_stub_map
 from google.appengine.api import datastore_admin
+from google.appengine.api import datastore_errors
 from google.appengine.api import datastore_types
 from google.appengine.api.taskqueue import taskqueue_service_pb
 from google.appengine.datastore import datastore_index
@@ -93,6 +94,27 @@ _MAX_EG_PER_TXN = 5
 _BLOB_MEANINGS = frozenset((entity_pb.Property.BLOB,
                             entity_pb.Property.ENTITY_PROTO,
                             entity_pb.Property.TEXT))
+
+
+
+
+
+
+
+_RETRIES = 3
+
+
+
+_INITIAL_RETRY_DELAY_MS = 100
+
+
+
+_RETRY_DELAY_MULTIPLIER = 2
+
+
+
+_MAX_RETRY_DELAY_MS = 120000
+
 
 def _GetScatterProperty(entity_proto):
   """Gets the scatter property for an object.
@@ -269,13 +291,18 @@ def CheckAppId(request_trusted, request_app_id, app_id):
         'app "%s" cannot access app "%s"\'s data' % (request_app_id, app_id))
 
 
-def CheckReference(request_trusted, request_app_id, key):
+def CheckReference(request_trusted,
+                   request_app_id,
+                   key,
+                   require_id_or_name=True):
   """Check this key.
 
   Args:
     request_trusted: If the request is trusted.
     request_app_id: The application ID of the app making the request.
     key: entity_pb.Reference
+    require_id_or_name: Boolean indicating if we should enforce the presence of
+      an id or name in the last element of the key's path.
 
   Raises:
     apiproxy_errors.ApplicationError: if the key is invalid
@@ -286,6 +313,14 @@ def CheckReference(request_trusted, request_app_id, key):
   CheckAppId(request_trusted, request_app_id, key.app())
 
   Check(key.path().element_size() > 0, 'key\'s path cannot be empty')
+
+  if require_id_or_name:
+
+    last_element = key.path().element_list()[-1]
+    has_id_or_name = ((last_element.has_id() and last_element.id() != 0) or
+                      (last_element.has_name() and last_element.name() != ""))
+    if not has_id_or_name:
+      raise datastore_errors.BadRequestError('missing key id/name')
 
   for elem in key.path().element_list():
     Check(not elem.has_id() or not elem.has_name(),
@@ -305,7 +340,7 @@ def CheckEntity(request_trusted, request_app_id, entity):
   """
 
 
-  CheckReference(request_trusted, request_app_id, entity.key())
+  CheckReference(request_trusted, request_app_id, entity.key(), False)
   for prop in entity.property_list():
     CheckProperty(request_trusted, request_app_id, prop)
   for prop in entity.raw_property_list():
@@ -1302,8 +1337,8 @@ class LiveTxn(object):
               'operating on too many entity groups in a single transaction.')
       else:
         Check(len(self._entity_groups) < 1,
-              'can\'t operate on multiple entity groups in a single '
-              'transaction.')
+              "cross-groups transaction need to be explicitly "
+              "specified (xg=True)")
       tracker = EntityGroupTracker(entity_group)
       self._entity_groups[key] = tracker
 
@@ -2323,6 +2358,7 @@ class BaseDatastore(BaseTransactionManager, BaseIndexManager):
     Returns:
       A list containing the entity or None if no entity exists.
     """
+
     if not raw_keys:
       return []
 
@@ -2511,6 +2547,8 @@ class BaseDatastore(BaseTransactionManager, BaseIndexManager):
   def _RunInTxn(self, values, app, op):
     """Runs the given values in a separate Txn.
 
+    Retries up to _RETRIES times on CONCURRENT_TRANSACTION errors.
+
     Args:
       values: A list of arguments to op.
       app: The app to create the Txn on.
@@ -2519,10 +2557,25 @@ class BaseDatastore(BaseTransactionManager, BaseIndexManager):
     Returns:
       The cost of the txn.
     """
-    txn = self._BeginTransaction(app, False)
-    for value in values:
-      op(txn, value)
-    return txn.Commit()
+    retries = 0
+    backoff = _INITIAL_RETRY_DELAY_MS / 1000.0
+    while True:
+      try:
+        txn = self._BeginTransaction(app, False)
+        for value in values:
+          op(txn, value)
+        return txn.Commit()
+      except apiproxy_errors.ApplicationError, e:
+        if e.application_error == datastore_pb.Error.CONCURRENT_TRANSACTION:
+
+          retries += 1
+          if retries <= _RETRIES:
+            time.sleep(backoff)
+            backoff *= _RETRY_DELAY_MULTIPLIER
+            if backoff * 1000.0 > _MAX_RETRY_DELAY_MS:
+              backoff = _MAX_RETRY_DELAY_MS / 1000.0
+            continue
+        raise
 
   def _CheckHasIndex(self, query, trusted=False, calling_app=None):
     """Checks if the query can be satisfied given the existing indexes.

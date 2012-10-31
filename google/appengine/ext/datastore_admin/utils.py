@@ -54,9 +54,11 @@ MAPREDUCE_MAX_SHARDS = 256
 DATASTORE_ADMIN_OPERATION_KIND = '_AE_DatastoreAdmin_Operation'
 BACKUP_INFORMATION_KIND = '_AE_Backup_Information'
 BACKUP_INFORMATION_FILES_KIND = '_AE_Backup_Information_Kind_Files'
+BACKUP_INFORMATION_KIND_TYPE_INFO = '_AE_Backup_Information_Kind_Type_Info'
 DATASTORE_ADMIN_KINDS = (DATASTORE_ADMIN_OPERATION_KIND,
                          BACKUP_INFORMATION_KIND,
-                         BACKUP_INFORMATION_FILES_KIND)
+                         BACKUP_INFORMATION_FILES_KIND,
+                         BACKUP_INFORMATION_KIND_TYPE_INFO)
 
 
 class ConfigDefaults(object):
@@ -577,6 +579,11 @@ def AbortAdminOperation(operation_key,
     model.MapreduceControl.abort(job, config=_CreateDatastoreConfig())
 
 
+def get_kind_from_entity_pb(entity):
+  element_list = entity.key().path().element_list()
+  return element_list[-1].type() if element_list else None
+
+
 def FixKeys(entity_proto, app_id):
   """Go over keys in the given entity and update the application id.
 
@@ -595,17 +602,17 @@ def FixKeys(entity_proto, app_id):
       if prop_value.has_referencevalue():
         FixKey(prop_value.mutable_referencevalue())
       elif prop.meaning() == entity_pb.Property.ENTITY_PROTO:
-        embeded_entity_proto = entity_pb.EntityProto()
+        embedded_entity_proto = entity_pb.EntityProto()
         try:
-          embeded_entity_proto.ParsePartialFromString(prop_value.stringvalue())
+          embedded_entity_proto.ParsePartialFromString(prop_value.stringvalue())
         except Exception:
           logging.exception('Failed to fix-keys for property %s of %s',
                             prop.name(),
                             entity_proto.key())
         else:
-          FixKeys(embeded_entity_proto, app_id)
+          FixKeys(embedded_entity_proto, app_id)
           prop_value.set_stringvalue(
-              embeded_entity_proto.SerializePartialToString())
+              embedded_entity_proto.SerializePartialToString())
 
 
   if entity_proto.has_key() and entity_proto.key().path().element_size():

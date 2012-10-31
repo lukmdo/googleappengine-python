@@ -126,7 +126,10 @@ Options:
                              (Default '30')
   --use_sqlite               Use the new, SQLite based datastore stub.
                              (Default false)
-
+  --port_sqlite_data         Converts the data from the file based datastore
+                             stub to the new SQLite stub, one time use only.
+                             Requires enough RAM to hold all of the entities.
+                             (Default false)
 
 
 USING THE SDK

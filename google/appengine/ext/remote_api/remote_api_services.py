@@ -92,8 +92,6 @@ SERVICE_PB_MAP = {
                        datastore_pb.AllocateIdsResponse),
         'RunQuery':   (datastore_pb.Query,
                        datastore_pb.QueryResult),
-        'RunCompiledQuery':(datastore_pb.RunCompiledQueryRequest,
-                            datastore_pb.QueryResult),
         'Next':       (datastore_pb.NextRequest, datastore_pb.QueryResult),
         'BeginTransaction':(datastore_pb.BeginTransactionRequest,
                             datastore_pb.Transaction),
@@ -140,6 +138,8 @@ SERVICE_PB_MAP = {
                       images_service_pb.ImagesHistogramResponse),
         'GetUrlBase': (images_service_pb.ImagesGetUrlBaseRequest,
                        images_service_pb.ImagesGetUrlBaseResponse),
+        'DeleteUrlBase': (images_service_pb.ImagesDeleteUrlBaseRequest,
+                          images_service_pb.ImagesDeleteUrlBaseResponse),
     },
     'logservice': {
         'Flush': (log_service_pb.FlushRequest, api_base_pb.VoidProto),
@@ -168,6 +168,8 @@ SERVICE_PB_MAP = {
     },
     'remote_datastore': {
         'RunQuery':    (datastore_pb.Query, datastore_pb.QueryResult),
+        'TransactionQuery': (datastore_pb.Query,
+                             remote_api_pb.TransactionQueryResult),
         'Transaction': (remote_api_pb.TransactionRequest,
                         datastore_pb.PutResponse),
         'GetIDs':      (datastore_pb.PutRequest, datastore_pb.PutResponse),
@@ -197,8 +199,6 @@ SERVICE_PB_MAP = {
                 taskqueue_service_pb.TaskQueueAddResponse),
         'BulkAdd': (taskqueue_service_pb.TaskQueueBulkAddRequest,
                     taskqueue_service_pb.TaskQueueBulkAddResponse),
-        'UpdateQueue': (taskqueue_service_pb.TaskQueueUpdateQueueRequest,
-                        taskqueue_service_pb.TaskQueueUpdateQueueResponse),
         'FetchQueues': (taskqueue_service_pb.TaskQueueFetchQueuesRequest,
                         taskqueue_service_pb.TaskQueueFetchQueuesResponse),
         'FetchQueueStats': (
@@ -243,6 +243,8 @@ SERVICE_PB_MAP = {
                             user_service_pb.CreateLogoutURLResponse),
         'GetOAuthUser': (user_service_pb.GetOAuthUserRequest,
                          user_service_pb.GetOAuthUserResponse),
+        'CheckOAuthSignature': (user_service_pb.CheckOAuthSignatureRequest,
+                                user_service_pb.CheckOAuthSignatureResponse),
     },
     'xmpp': {
         'GetPresence': (xmpp_service_pb.PresenceRequest,
@@ -252,10 +254,12 @@ SERVICE_PB_MAP = {
         'SendInvite':  (xmpp_service_pb.XmppInviteRequest,
                         xmpp_service_pb.XmppInviteResponse),
         'SendPresence':  (xmpp_service_pb.XmppSendPresenceRequest,
-                        xmpp_service_pb.XmppSendPresenceResponse),
+                          xmpp_service_pb.XmppSendPresenceResponse),
         'CreateChannel': (channel_service_pb.CreateChannelRequest,
                           channel_service_pb.CreateChannelResponse),
         'SendChannelMessage': (channel_service_pb.SendMessageRequest,
                                api_base_pb.VoidProto),
+        'GetChannelPresence': (channel_service_pb.ChannelPresenceRequest,
+                               channel_service_pb.ChannelPresenceResponse),
     },
 }

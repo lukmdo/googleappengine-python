@@ -163,6 +163,11 @@ def FakeGetPlatform():
     return distutils.util.get_platform()
 
 
+def FakeCryptoRandomOSRNGnew(*args, **kwargs):
+  from Crypto.Random.OSRNG import fallback
+  return fallback.new(*args, **kwargs)
+
+
 
 
 
@@ -318,8 +323,10 @@ class FakeFile(file):
 
           [os.path.join('Crypto')],
           GeneratePythonPaths('Crypto', '__init__'),
+          GeneratePythonPaths('Crypto', 'pct_warnings'),
           [os.path.join('Crypto', 'Cipher')],
           GeneratePythonPaths('Crypto', 'Cipher', '__init__'),
+          GeneratePythonPaths('Crypto', 'Cipher', 'blockalgo'),
           GeneratePythonPaths('Crypto', 'Cipher', 'AES'),
           GeneratePythonPaths('Crypto', 'Cipher', 'ARC2'),
           GeneratePythonPaths('Crypto', 'Cipher', 'ARC4'),
@@ -327,31 +334,67 @@ class FakeFile(file):
           GeneratePythonPaths('Crypto', 'Cipher', 'CAST'),
           GeneratePythonPaths('Crypto', 'Cipher', 'DES'),
           GeneratePythonPaths('Crypto', 'Cipher', 'DES3'),
+          GeneratePythonPaths('Crypto', 'Cipher', 'PKCS1_OAEP'),
+          GeneratePythonPaths('Crypto', 'Cipher', 'PKCS1_v1_5'),
           GeneratePythonPaths('Crypto', 'Cipher', 'XOR'),
           [os.path.join('Crypto', 'Hash')],
           GeneratePythonPaths('Crypto', 'Hash', '__init__'),
+          GeneratePythonPaths('Crypto', 'Hash', 'hashalgo'),
           GeneratePythonPaths('Crypto', 'Hash', 'HMAC'),
-          os.path.join('Crypto', 'Hash', 'MD2'),
-          os.path.join('Crypto', 'Hash', 'MD4'),
+          GeneratePythonPaths('Crypto', 'Hash', 'MD2'),
+          GeneratePythonPaths('Crypto', 'Hash', 'MD4'),
           GeneratePythonPaths('Crypto', 'Hash', 'MD5'),
           GeneratePythonPaths('Crypto', 'Hash', 'SHA'),
-          os.path.join('Crypto', 'Hash', 'SHA256'),
-          os.path.join('Crypto', 'Hash', 'RIPEMD'),
+          GeneratePythonPaths('Crypto', 'Hash', 'SHA224'),
+          GeneratePythonPaths('Crypto', 'Hash', 'SHA256'),
+          GeneratePythonPaths('Crypto', 'Hash', 'SHA384'),
+          GeneratePythonPaths('Crypto', 'Hash', 'SHA512'),
+          GeneratePythonPaths('Crypto', 'Hash', 'RIPEMD'),
           [os.path.join('Crypto', 'Protocol')],
           GeneratePythonPaths('Crypto', 'Protocol', '__init__'),
           GeneratePythonPaths('Crypto', 'Protocol', 'AllOrNothing'),
           GeneratePythonPaths('Crypto', 'Protocol', 'Chaffing'),
+          GeneratePythonPaths('Crypto', 'Protocol', 'KDF'),
           [os.path.join('Crypto', 'PublicKey')],
           GeneratePythonPaths('Crypto', 'PublicKey', '__init__'),
           GeneratePythonPaths('Crypto', 'PublicKey', 'DSA'),
+          GeneratePythonPaths('Crypto', 'PublicKey', '_DSA'),
           GeneratePythonPaths('Crypto', 'PublicKey', 'ElGamal'),
           GeneratePythonPaths('Crypto', 'PublicKey', 'RSA'),
+          GeneratePythonPaths('Crypto', 'PublicKey', '_RSA'),
           GeneratePythonPaths('Crypto', 'PublicKey', 'pubkey'),
           GeneratePythonPaths('Crypto', 'PublicKey', 'qNEW'),
+          GeneratePythonPaths('Crypto', 'PublicKey', '_slowmath'),
+          [os.path.join('Crypto', 'Random')],
+          GeneratePythonPaths('Crypto', 'Random', '__init__'),
+          GeneratePythonPaths('Crypto', 'Random', 'random'),
+          GeneratePythonPaths('Crypto', 'Random', '_UserFriendlyRNG'),
+          [os.path.join('Crypto', 'Random', 'OSRNG')],
+          GeneratePythonPaths('Crypto', 'Random', 'OSRNG', '__init__'),
+          GeneratePythonPaths('Crypto', 'Random', 'OSRNG', 'fallback'),
+          GeneratePythonPaths('Crypto', 'Random', 'OSRNG', 'nt'),
+          GeneratePythonPaths('Crypto', 'Random', 'OSRNG', 'posix'),
+          GeneratePythonPaths('Crypto', 'Random', 'OSRNG', 'rng_base'),
+          [os.path.join('Crypto', 'Random', 'Fortuna')],
+          GeneratePythonPaths('Crypto', 'Random', 'Fortuna', '__init__'),
+          GeneratePythonPaths('Crypto', 'Random', 'Fortuna',
+                              'FortunaAccumulator'),
+          GeneratePythonPaths('Crypto', 'Random', 'Fortuna',
+                              'FortunaGenerator'),
+          GeneratePythonPaths('Crypto', 'Random', 'Fortuna', 'SHAd256'),
+          [os.path.join('Crypto', 'Signature')],
+          GeneratePythonPaths('Crypto', 'Signature', '__init__'),
+          GeneratePythonPaths('Crypto', 'Signature', 'PKCS1_PSS'),
+          GeneratePythonPaths('Crypto', 'Signature', 'PKCS1_v1_5'),
           [os.path.join('Crypto', 'Util')],
           GeneratePythonPaths('Crypto', 'Util', '__init__'),
+          GeneratePythonPaths('Crypto', 'Util', 'asn1'),
+          GeneratePythonPaths('Crypto', 'Util', 'Counter'),
           GeneratePythonPaths('Crypto', 'Util', 'RFC1751'),
           GeneratePythonPaths('Crypto', 'Util', 'number'),
+          GeneratePythonPaths('Crypto', 'Util', '_number_new'),
+          GeneratePythonPaths('Crypto', 'Util', 'py3compat'),
+          GeneratePythonPaths('Crypto', 'Util', 'python_compat'),
           GeneratePythonPaths('Crypto', 'Util', 'randpool'),
           ]))
 
@@ -736,6 +779,22 @@ class HardenedModulesHook(object):
       'SHA256',
       'XOR',
 
+      '_AES',
+      '_ARC2',
+      '_ARC4',
+      '_Blowfish',
+      '_CAST',
+      '_DES',
+      '_DES3',
+      '_MD2',
+      '_MD4',
+      '_RIPEMD160',
+      '_SHA224',
+      '_SHA256',
+      '_SHA384',
+      '_SHA512',
+      '_XOR',
+
       '_Crypto_Cipher__AES',
       '_Crypto_Cipher__ARC2',
       '_Crypto_Cipher__ARC4',
@@ -986,6 +1045,7 @@ class HardenedModulesHook(object):
           'WUNTRACED',
           'W_OK',
           'X_OK',
+          '_get_exports_list',
       ],
 
 
@@ -1169,6 +1229,10 @@ class HardenedModulesHook(object):
 
       'distutils.util': {
           'get_platform': FakeGetPlatform,
+      },
+
+      'Crypto.Random.OSRNG': {
+          'new': FakeCryptoRandomOSRNGnew,
       },
   }
 

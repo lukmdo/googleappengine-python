@@ -43,6 +43,7 @@ from google.appengine.api import namespace_manager
 from google.appengine.api.search import expression_parser
 from google.appengine.api.search import query_parser
 from google.appengine.api.search import search_service_pb
+from google.appengine.api.search import search_util
 from google.appengine.runtime import apiproxy_errors
 
 
@@ -82,6 +83,8 @@ __all__ = [
     'MAXIMUM_QUERY_LENGTH',
     'MAXIMUM_SEARCH_OFFSET',
     'MAXIMUM_SORTED_DOCUMENTS',
+    'MAX_DATE',
+    'MIN_DATE',
     'NumberField',
     'OperationResult',
     'Query',
@@ -116,6 +119,7 @@ MAXIMUM_NUMBER_FOUND_ACCURACY = 10000
 MAXIMUM_FIELDS_RETURNED_PER_SEARCH = 100
 MAXIMUM_INDEXES_RETURNED_PER_LIST_REQUEST = 1000
 MAXIMUM_LIST_INDEXES_OFFSET = 1000
+
 _LANGUAGE_LENGTH = 2
 _MAXIMUM_STRING_LENGTH = 500
 _MAXIMUM_CURSOR_LENGTH = 10000
@@ -124,7 +128,10 @@ _VISIBLE_PRINTABLE_ASCII = frozenset(
     set(string.printable) - set(string.whitespace))
 _FIELD_NAME_PATTERN = '^[A-Za-z][A-Za-z0-9_]*$'
 
-_BASE_DATE = datetime.date(1970, 1, 1)
+MAX_DATE = datetime.datetime(
+    datetime.MAXYEAR, 12, 31, 23, 59, 59, 999999, tzinfo=None)
+MIN_DATE = datetime.datetime(
+    datetime.MINYEAR, 1, 1, 0, 0, 0, 0, tzinfo=None)
 
 
 _PROTO_FIELDS_STRING_VALUE = frozenset([document_pb.FieldValue.TEXT,
@@ -608,10 +615,17 @@ def _CheckAtom(atom):
 
 
 def _CheckDate(date):
-  """Checks the date is a datetime.date, but not a datetime.datetime."""
-  if not isinstance(date, datetime.date) or isinstance(date, datetime.datetime):
-    raise TypeError('date must be a date but not a datetime, got %s' %
-                    date.__class__.__name__)
+  """Checks the date is in the correct range."""
+  if isinstance(date, datetime.datetime):
+    if date < MIN_DATE or date > MAX_DATE:
+      raise TypeError('date must be between %s and %s (got %s)' %
+                      (MIN_DATE, MAX_DATE, date))
+  elif isinstance(date, datetime.date):
+    if date < MIN_DATE.date() or date > MAX_DATE.date():
+      raise TypeError('date must be between %s and %s (got %s)' %
+                      (MIN_DATE, MAX_DATE, date))
+  else:
+    raise TypeError('date must be datetime.datetime or datetime.date')
   return date
 
 
@@ -924,7 +938,7 @@ class DateField(Field):
 
   def _CopyValueToProtocolBuffer(self, field_value_pb):
     field_value_pb.set_type(document_pb.FieldValue.DATE)
-    field_value_pb.set_string_value(self.value.isoformat())
+    field_value_pb.set_string_value(search_util.SerializeDate(self.value))
 
 
 class NumberField(Field):
@@ -1062,8 +1076,7 @@ def _GetValue(value_pb):
     return None
   if value_pb.type() == document_pb.FieldValue.DATE:
     if value_pb.has_string_value():
-      return datetime.datetime.strptime(value_pb.string_value(),
-                                        '%Y-%m-%d').date()
+      return search_util.DeserializeDate(value_pb.string_value())
     return None
   if value_pb.type() == document_pb.FieldValue.NUMBER:
     if value_pb.has_string_value():
@@ -1462,9 +1475,10 @@ def _CopySortExpressionToProtocolBuffer(sort_expression, pb):
     pb.set_sort_descending(False)
   if isinstance(sort_expression.default_value, basestring):
     pb.set_default_value_text(sort_expression.default_value.encode('utf-8'))
-  elif isinstance(sort_expression.default_value, datetime.date):
+  elif (isinstance(sort_expression.default_value, datetime.datetime) or
+        isinstance(sort_expression.default_value, datetime.date)):
     pb.set_default_value_numeric(
-        (sort_expression.default_value - _BASE_DATE).days)
+        search_util.EpochTime(sort_expression.default_value))
   else:
     pb.set_default_value_numeric(sort_expression.default_value)
   return pb
@@ -1572,9 +1586,10 @@ class SortExpression(object):
     if isinstance(self.default_value, basestring):
       self._default_value = _ConvertToUnicode(default_value)
       _CheckText(self._default_value, 'default_value')
-    elif not isinstance(self._default_value, (int, long, float, datetime.date)):
-      raise TypeError('default_value must be text, numeric or date, got %s' %
-                      self._default_value.__class__.__name__)
+    elif not isinstance(self._default_value,
+                        (int, long, float, datetime.date, datetime.datetime)):
+      raise TypeError('default_value must be text, numeric or datetime, got %s'
+                      % self._default_value.__class__.__name__)
 
   @property
   def expression(self):

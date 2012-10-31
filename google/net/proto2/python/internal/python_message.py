@@ -249,7 +249,7 @@ def _DefaultValueConstructorForField(field):
   """
 
   if field.label == _FieldDescriptor.LABEL_REPEATED:
-    if field.default_value != []:
+    if field.has_default_value and field.default_value != []:
       raise ValueError('Repeated field default value not empty list: %s' % (
           field.default_value))
     if field.cpp_type == _FieldDescriptor.CPPTYPE_MESSAGE:
@@ -277,6 +277,8 @@ def _DefaultValueConstructorForField(field):
     return MakeSubMessageDefault
 
   def MakeScalarDefault(message):
+
+
     return field.default_value
   return MakeScalarDefault
 
@@ -432,6 +434,8 @@ def _AddPropertiesForNonRepeatedScalarField(field, cls):
   valid_values = set()
 
   def getter(self):
+
+
     return self._fields.get(field, default_value)
   getter.__module__ = None
   getter.__doc__ = 'Getter for %s.' % proto_field_name

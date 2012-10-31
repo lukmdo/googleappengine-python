@@ -1364,9 +1364,6 @@ class RandomStringInputReader(InputReader):
 
   STRING_LENGTH = "string_length"
 
-
-  _MAX_SHARD_COUNT = 256
-
   DEFAULT_STRING_LENGTH = 10
 
   def __init__(self, count, string_length):
@@ -1401,7 +1398,7 @@ class RandomStringInputReader(InputReader):
     if cls.STRING_LENGTH in params:
       string_length = params[cls.STRING_LENGTH]
 
-    shard_count = min(cls._MAX_SHARD_COUNT, mapper_spec.shard_count)
+    shard_count = mapper_spec.shard_count
     count_per_shard = count // shard_count
 
     mr_input_readers = [
@@ -1773,6 +1770,10 @@ class RecordsReader(InputReader):
               COUNTER_IO_READ_MSEC, int((time.time() - start_time) * 1000))(ctx)
           operation.counters.Increment(COUNTER_IO_READ_BYTES, len(record))(ctx)
         yield record
+      except (files.ExistenceError), e:
+        raise errors.FailJobError("ExistenceError: %s" % e)
+      except (files.UnknownError), e:
+        raise errors.RetrySliceError("UnknownError: %s" % e)
       except EOFError:
         self._filenames.pop(0)
         if not self._filenames:

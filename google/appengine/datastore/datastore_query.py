@@ -2444,6 +2444,8 @@ class Batch(object):
                                                  datastore_pb.QueryResult(),
                                                  self.__query_result_hook)
 
+  _need_index_header = 'The suggested index for this query is:'
+
   def __query_result_hook(self, rpc):
     """Internal method used as get_result_hook for RunQuery/Next operation."""
     try:
@@ -2454,10 +2456,15 @@ class Batch(object):
         _, kind, ancestor, props = datastore_index.CompositeIndexForQuery(
             rpc.request)
 
-        yaml = datastore_index.IndexYamlForQuery(
-           kind, ancestor, datastore_index.GetRecommendedIndexProperties(props))
+        props = datastore_index.GetRecommendedIndexProperties(props)
+        yaml = datastore_index.IndexYamlForQuery(kind, ancestor, props)
+        xml = datastore_index.IndexXmlForQuery(kind, ancestor, props)
+
+
         raise datastore_errors.NeedIndexError(
-            str(exc) + '\nThe suggested index for this query is:\n' + yaml)
+            '\n'.join([str(exc), self._need_index_header, yaml]),
+            original_message=str(exc), header=self._need_index_header,
+            yaml_index=yaml, xml_index=xml)
       raise
     query_result = rpc.response
 

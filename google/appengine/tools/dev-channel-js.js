@@ -1005,6 +1005,13 @@ goog.array.bucket = function(array, sorter) {
   }
   return buckets
 };
+goog.array.toObject = function(arr, keyFunc, opt_obj) {
+  var ret = {};
+  goog.array.forEach(arr, function(element, index) {
+    ret[keyFunc.call(opt_obj, element, index, arr)] = element
+  });
+  return ret
+};
 goog.array.repeat = function(value, n) {
   for(var array = [], i = 0;i < n;i++) {
     array[i] = value
@@ -1399,6 +1406,14 @@ goog.object.createSet = function(var_args) {
   }
   return rv
 };
+goog.object.createImmutableView = function(obj) {
+  var result = obj;
+  Object.isFrozen && !Object.isFrozen(obj) && (result = Object.create(obj), Object.freeze(result));
+  return result
+};
+goog.object.isImmutableView = function(obj) {
+  return!!Object.isFrozen && Object.isFrozen(obj)
+};
 goog.userAgent = {};
 goog.userAgent.ASSUME_IE = !1;
 goog.userAgent.ASSUME_GECKO = !1;
@@ -1545,9 +1560,10 @@ goog.dom.classes.toggle = function(element, className) {
   goog.dom.classes.enable(element, className, add);
   return add
 };
-goog.dom.TagName = {A:"A", ABBR:"ABBR", ACRONYM:"ACRONYM", ADDRESS:"ADDRESS", APPLET:"APPLET", AREA:"AREA", AUDIO:"AUDIO", B:"B", BASE:"BASE", BASEFONT:"BASEFONT", BDO:"BDO", BIG:"BIG", BLOCKQUOTE:"BLOCKQUOTE", BODY:"BODY", BR:"BR", BUTTON:"BUTTON", CANVAS:"CANVAS", CAPTION:"CAPTION", CENTER:"CENTER", CITE:"CITE", CODE:"CODE", COL:"COL", COLGROUP:"COLGROUP", DD:"DD", DEL:"DEL", DFN:"DFN", DIR:"DIR", DIV:"DIV", DL:"DL", DT:"DT", EM:"EM", FIELDSET:"FIELDSET", FONT:"FONT", FORM:"FORM", FRAME:"FRAME", 
-FRAMESET:"FRAMESET", H1:"H1", H2:"H2", H3:"H3", H4:"H4", H5:"H5", H6:"H6", HEAD:"HEAD", HR:"HR", HTML:"HTML", I:"I", IFRAME:"IFRAME", IMG:"IMG", INPUT:"INPUT", INS:"INS", ISINDEX:"ISINDEX", KBD:"KBD", LABEL:"LABEL", LEGEND:"LEGEND", LI:"LI", LINK:"LINK", MAP:"MAP", MENU:"MENU", META:"META", NOFRAMES:"NOFRAMES", NOSCRIPT:"NOSCRIPT", OBJECT:"OBJECT", OL:"OL", OPTGROUP:"OPTGROUP", OPTION:"OPTION", P:"P", PARAM:"PARAM", PRE:"PRE", Q:"Q", S:"S", SAMP:"SAMP", SCRIPT:"SCRIPT", SELECT:"SELECT", SMALL:"SMALL", 
-SPAN:"SPAN", STRIKE:"STRIKE", STRONG:"STRONG", STYLE:"STYLE", SUB:"SUB", SUP:"SUP", TABLE:"TABLE", TBODY:"TBODY", TD:"TD", TEXTAREA:"TEXTAREA", TFOOT:"TFOOT", TH:"TH", THEAD:"THEAD", TITLE:"TITLE", TR:"TR", TT:"TT", U:"U", UL:"UL", VAR:"VAR", VIDEO:"VIDEO"};
+goog.dom.TagName = {A:"A", ABBR:"ABBR", ACRONYM:"ACRONYM", ADDRESS:"ADDRESS", APPLET:"APPLET", AREA:"AREA", ARTICLE:"ARTICLE", ASIDE:"ASIDE", AUDIO:"AUDIO", B:"B", BASE:"BASE", BASEFONT:"BASEFONT", BDI:"BDI", BDO:"BDO", BIG:"BIG", BLOCKQUOTE:"BLOCKQUOTE", BODY:"BODY", BR:"BR", BUTTON:"BUTTON", CANVAS:"CANVAS", CAPTION:"CAPTION", CENTER:"CENTER", CITE:"CITE", CODE:"CODE", COL:"COL", COLGROUP:"COLGROUP", COMMAND:"COMMAND", DATA:"DATA", DATALIST:"DATALIST", DD:"DD", DEL:"DEL", DETAILS:"DETAILS", DFN:"DFN", 
+DIALOG:"DIALOG", DIR:"DIR", DIV:"DIV", DL:"DL", DT:"DT", EM:"EM", EMBED:"EMBED", FIELDSET:"FIELDSET", FIGCAPTION:"FIGCAPTION", FIGURE:"FIGURE", FONT:"FONT", FOOTER:"FOOTER", FORM:"FORM", FRAME:"FRAME", FRAMESET:"FRAMESET", H1:"H1", H2:"H2", H3:"H3", H4:"H4", H5:"H5", H6:"H6", HEAD:"HEAD", HEADER:"HEADER", HGROUP:"HGROUP", HR:"HR", HTML:"HTML", I:"I", IFRAME:"IFRAME", IMG:"IMG", INPUT:"INPUT", INS:"INS", ISINDEX:"ISINDEX", KBD:"KBD", KEYGEN:"KEYGEN", LABEL:"LABEL", LEGEND:"LEGEND", LI:"LI", LINK:"LINK", 
+MAP:"MAP", MARK:"MARK", MATH:"MATH", MENU:"MENU", META:"META", METER:"METER", NAV:"NAV", NOFRAMES:"NOFRAMES", NOSCRIPT:"NOSCRIPT", OBJECT:"OBJECT", OL:"OL", OPTGROUP:"OPTGROUP", OPTION:"OPTION", OUTPUT:"OUTPUT", P:"P", PARAM:"PARAM", PRE:"PRE", PROGRESS:"PROGRESS", Q:"Q", RP:"RP", RT:"RT", RUBY:"RUBY", S:"S", SAMP:"SAMP", SCRIPT:"SCRIPT", SECTION:"SECTION", SELECT:"SELECT", SMALL:"SMALL", SOURCE:"SOURCE", SPAN:"SPAN", STRIKE:"STRIKE", STRONG:"STRONG", STYLE:"STYLE", SUB:"SUB", SUMMARY:"SUMMARY", 
+SUP:"SUP", SVG:"SVG", TABLE:"TABLE", TBODY:"TBODY", TD:"TD", TEXTAREA:"TEXTAREA", TFOOT:"TFOOT", TH:"TH", THEAD:"THEAD", TIME:"TIME", TITLE:"TITLE", TR:"TR", TRACK:"TRACK", TT:"TT", U:"U", UL:"UL", VAR:"VAR", VIDEO:"VIDEO", WBR:"WBR"};
 goog.dom.ASSUME_QUIRKS_MODE = !1;
 goog.dom.ASSUME_STANDARDS_MODE = !1;
 goog.dom.COMPAT_MODE_KNOWN_ = goog.dom.ASSUME_QUIRKS_MODE || goog.dom.ASSUME_STANDARDS_MODE;
@@ -1671,8 +1687,8 @@ goog.dom.createDom_ = function(doc, args) {
       tagNameArr.push(' type="', goog.string.htmlEscape(attributes.type), '"');
       var clone = {};
       goog.object.extend(clone, attributes);
-      attributes = clone;
-      delete attributes.type
+      delete clone.type;
+      attributes = clone
     }
     tagNameArr.push(">");
     tagName = tagNameArr.join("")
@@ -1752,6 +1768,10 @@ goog.dom.canHaveChildren = function(node) {
     ;
     case goog.dom.TagName.COL:
     ;
+    case goog.dom.TagName.COMMAND:
+    ;
+    case goog.dom.TagName.EMBED:
+    ;
     case goog.dom.TagName.FRAME:
     ;
     case goog.dom.TagName.HR:
@@ -1763,6 +1783,8 @@ goog.dom.canHaveChildren = function(node) {
     case goog.dom.TagName.IFRAME:
     ;
     case goog.dom.TagName.ISINDEX:
+    ;
+    case goog.dom.TagName.KEYGEN:
     ;
     case goog.dom.TagName.LINK:
     ;
@@ -1778,7 +1800,13 @@ goog.dom.canHaveChildren = function(node) {
     ;
     case goog.dom.TagName.SCRIPT:
     ;
+    case goog.dom.TagName.SOURCE:
+    ;
     case goog.dom.TagName.STYLE:
+    ;
+    case goog.dom.TagName.TRACK:
+    ;
+    case goog.dom.TagName.WBR:
       return!1
   }
   return!0
@@ -1903,6 +1931,14 @@ goog.dom.compareNodeOrder = function(node1, node2) {
   }
   if(node1.compareDocumentPosition) {
     return node1.compareDocumentPosition(node2) & 2 ? 1 : -1
+  }
+  if((node1.nodeType == goog.dom.NodeType.DOCUMENT || node2.nodeType == goog.dom.NodeType.DOCUMENT) && goog.userAgent.IE && !goog.userAgent.isVersion(9)) {
+    if(node1.nodeType == goog.dom.NodeType.DOCUMENT) {
+      return-1
+    }
+    if(node2.nodeType == goog.dom.NodeType.DOCUMENT) {
+      return 1
+    }
   }
   if("sourceIndex" in node1 || node1.parentNode && "sourceIndex" in node1.parentNode) {
     var isElement1 = node1.nodeType == goog.dom.NodeType.ELEMENT, isElement2 = node2.nodeType == goog.dom.NodeType.ELEMENT;
@@ -2804,6 +2840,14 @@ goog.structs.Map.prototype.transpose = function() {
   }
   return transposed
 };
+goog.structs.Map.prototype.toObject = function() {
+  this.cleanupKeysArray_();
+  for(var obj = {}, i = 0;i < this.keys_.length;i++) {
+    var key = this.keys_[i];
+    obj[key] = this.map_[key]
+  }
+  return obj
+};
 goog.structs.Map.prototype.__iterator__ = function(opt_keys) {
   this.cleanupKeysArray_();
   var i = 0, keys = this.keys_, map = this.map_, version = this.version_, selfObj = this, newIter = new goog.iter.Iterator;
@@ -3359,6 +3403,9 @@ goog.Disposable.clearUndisposedObjects = function() {
   goog.Disposable.instances_ = {}
 };
 goog.Disposable.prototype.disposed_ = !1;
+goog.Disposable.prototype.isDisposed = function() {
+  return this.disposed_
+};
 goog.Disposable.prototype.dispose = function() {
   if(!this.disposed_ && (this.disposed_ = !0, this.disposeInternal(), goog.Disposable.ENABLE_MONITORING)) {
     var uid = goog.getUid(this);
@@ -3375,6 +3422,9 @@ goog.Disposable.prototype.disposeInternal = function() {
       this.onDisposeCallbacks_.shift()()
     }
   }
+};
+goog.Disposable.isDisposed = function(obj) {
+  return obj && "function" == typeof obj.isDisposed ? obj.isDisposed() : !1
 };
 goog.dispose = function(obj) {
   obj && "function" == typeof obj.dispose && obj.dispose()
@@ -4462,7 +4512,8 @@ goog.net.XhrIo.prototype.send = function(url, opt_method, opt_content, opt_heade
   opt_headers && goog.structs.forEach(opt_headers, function(value, key) {
     headers.set(key, value)
   });
-  "POST" == method && !headers.containsKey(goog.net.XhrIo.CONTENT_TYPE_HEADER) && headers.set(goog.net.XhrIo.CONTENT_TYPE_HEADER, goog.net.XhrIo.FORM_CONTENT_TYPE);
+  var contentIsFormData = goog.global.FormData && content instanceof goog.global.FormData;
+  "POST" == method && (!headers.containsKey(goog.net.XhrIo.CONTENT_TYPE_HEADER) && !contentIsFormData) && headers.set(goog.net.XhrIo.CONTENT_TYPE_HEADER, goog.net.XhrIo.FORM_CONTENT_TYPE);
   goog.structs.forEach(headers, function(value, key) {
     this.xhr_.setRequestHeader(key, value)
   }, this);
@@ -5003,6 +5054,7 @@ goog.appengine.DevSocket = function(token, handler) {
   this.onerror = handler.onerror;
   this.onclose = handler.onclose;
   this.win_ = goog.dom.getWindow();
+  this.pollingTimer_ = null;
   goog.net.XhrIo.send(this.getUrl_("connect"), goog.bind(this.connect_, this));
   goog.events.listen(this.win_, "beforeunload", goog.bind(this.beforeunload_, this));
   if(!document.body) {
@@ -5020,7 +5072,7 @@ goog.appengine.DevSocket.prototype.getUrl_ = function(command) {
 goog.appengine.DevSocket.prototype.connect_ = function(e) {
   var xhr = e.target;
   if(xhr.isSuccess()) {
-    this.clientId_ = xhr.getResponseText(), this.readyState = goog.appengine.DevSocket.ReadyState.OPEN, this.onopen(), this.win_.setTimeout(goog.bind(this.poll_, this), goog.appengine.DevSocket.POLLING_TIMEOUT_MS)
+    this.clientId_ = xhr.getResponseText(), this.readyState = goog.appengine.DevSocket.ReadyState.OPEN, this.onopen(), this.pollingTimer_ = this.win_.setTimeout(goog.bind(this.poll_, this), goog.appengine.DevSocket.POLLING_TIMEOUT_MS)
   }else {
     this.readyState = goog.appengine.DevSocket.ReadyState.CLOSING;
     var evt = {};
@@ -5043,9 +5095,9 @@ goog.appengine.DevSocket.prototype.forwardMessage_ = function(e) {
     if(evt.data.length) {
       this.onmessage(evt)
     }
-    this.win_.setTimeout(goog.bind(this.poll_, this), goog.appengine.DevSocket.POLLING_TIMEOUT_MS)
+    this.readyState == goog.appengine.DevSocket.ReadyState.OPEN && (this.pollingTimer_ = this.win_.setTimeout(goog.bind(this.poll_, this), goog.appengine.DevSocket.POLLING_TIMEOUT_MS))
   }else {
-    evt = {}, evt.description = xhr.getStatusText(), evt.code = xhr.getStatus(), this.onerror(evt)
+    evt = {}, evt.description = xhr.getStatusText(), evt.code = xhr.getStatus(), this.onerror(evt), this.readyState = goog.appengine.DevSocket.ReadyState.CLOSED, this.onclose()
   }
 };
 goog.appengine.DevSocket.prototype.poll_ = function() {
@@ -5077,6 +5129,7 @@ goog.appengine.DevSocket.prototype.send = function(data) {
 };
 goog.appengine.DevSocket.prototype.close = function() {
   this.readyState = goog.appengine.DevSocket.ReadyState.CLOSING;
+  this.pollingTimer_ && this.win_.clearTimeout(this.pollingTimer_);
   goog.net.XhrIo.send(this.getUrl_("disconnect"), goog.bind(this.disconnect_, this))
 };
 goog.appengine.DevSocket.Handler = function() {

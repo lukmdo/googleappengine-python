@@ -404,3 +404,6 @@ class EntitySchema(_message.Message):
 
 
 
+DESCRIPTOR.has_options = True
+DESCRIPTOR._options = _descriptor._ParseOptions(descriptor_pb2.FileOptions(), '\020\002 \002(\002B\014BackupProtos')
+

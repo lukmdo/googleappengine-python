@@ -111,3 +111,8 @@ def _SimplifyNode(node):
   for i, child in enumerate(node.children):
     node.setChild(i, _SimplifyNode(child))
   return node
+
+
+def GetQueryNodeText(node):
+  """Returns the text from the node, handling that it could be unicode."""
+  return node.getText().encode('utf-8')

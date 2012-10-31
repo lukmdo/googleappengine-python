@@ -48,7 +48,7 @@ from google.appengine.api import yaml_object
 
 
 
-_URL_REGEX = r'(?!\^)/|\.|(\(.).*(?!\$).'
+_URL_REGEX = r'(?!\^)/.*|\..*|(\(.).*(?!\$).'
 _FILES_REGEX = r'(?!\^).*(?!\$).'
 _URL_ROOT_REGEX = r'/.*'
 
@@ -194,6 +194,7 @@ HTTP_HEADERS = 'http_headers'
 APPLICATION = 'application'
 SERVER = 'server'
 SERVER_SETTINGS = 'server_settings'
+VM_SETTINGS = 'vm_settings'
 VERSION = 'version'
 MAJOR_VERSION = 'major_version'
 MINOR_VERSION = 'minor_version'
@@ -328,7 +329,9 @@ _SUPPORTED_LIBRARIES = [
         'pycrypto',
         'https://www.dlitz.net/software/pycrypto/',
         'A library of cryptogoogle.appengine._internal.graphy functions such as random number generation.',
-        ['2.3', '2.6']),
+        ['2.3', '2.6'],
+        experimental_versions=['2.6']
+        ),
     _VersionedLibrary(
         'setuptools',
         'http://pypi.python.org/pypi/setuptools',
@@ -346,8 +349,9 @@ _SUPPORTED_LIBRARIES = [
         'webob',
         'http://www.webob.org/',
         'A library that provides wrappers around the WSGI request environment.',
-        ['1.1.1'],
+        ['1.1.1', '1.2.2'],
         default_version='1.1.1',
+        experimental_versions=['1.2.2']
         ),
     _VersionedLibrary(
         'yaml',
@@ -1174,6 +1178,16 @@ class ServerSettings(validation.Validated):
   }
 
 
+class VmSettings(validation.ValidatedDict):
+  """Class for VM settings.
+
+  We don't validate these further because the feature is in flux.
+  """
+
+  KEY_VALIDATOR = validation.Regex('[a-zA-Z_][a-zA-Z0-9_]*')
+  VALUE_VALIDATOR = str
+
+
 class EnvironmentVariables(validation.ValidatedDict):
   """Class representing a mapping of environment variable key value pairs."""
 
@@ -1309,6 +1323,7 @@ class AppInfoExternal(validation.Validated):
       SOURCE_LANGUAGE: validation.Optional(
           validation.Regex(SOURCE_LANGUAGE_RE_STRING)),
       SERVER_SETTINGS: validation.Optional(ServerSettings),
+      VM_SETTINGS: validation.Optional(VmSettings),
       BUILTINS: validation.Optional(validation.Repeated(BuiltinHandler)),
       INCLUDES: validation.Optional(validation.Type(list)),
       HANDLERS: validation.Optional(validation.Repeated(URLMap)),
@@ -1422,6 +1437,27 @@ class AppInfoExternal(validation.Validated):
                                             version=required_version))
 
     return self.libraries + required_libraries
+
+  def GetNormalizedLibraries(self):
+    """Returns a list of normalized Library instances for this configuration.
+
+    Returns:
+      The list of active Library instances for this configuration. This includes
+      directly-specified libraries, their required dependencies as well as any
+      libraries enabled by default. Any libraries with "latest" as their version
+      will be replaced with the latest available version.
+    """
+    libraries = self.GetAllLibraries()
+    enabled_libraries = set(library.name for library in libraries)
+    for library in _SUPPORTED_LIBRARIES:
+      if library.default_version and library.name not in enabled_libraries:
+        libraries.append(Library(name=library.name,
+                                 version=library.default_version))
+    for library in libraries:
+      if library.version == 'latest':
+        library.version = _NAME_TO_SUPPORTED_LIBRARY[
+            library.name].supported_versions[-1]
+    return libraries
 
   def ApplyBackendSettings(self, backend_name):
     """Applies settings from the indicated backend to the AppInfoExternal.

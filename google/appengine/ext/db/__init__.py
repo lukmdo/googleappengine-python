@@ -1231,9 +1231,9 @@ class Model(object):
 
     Returns:
       If a single key was given: a Model instance associated with key
-      for provided class if it exists in the datastore, otherwise
-      None; if a list of keys was given: a list whose items are either
-      a Model instance or None.
+      for the provided class if it exists in the datastore, otherwise
+      None. If a list of keys was given: a list where list[i] is the
+      Model instance for keys[i], or None if no instance exists.
 
     Raises:
       KindError if any of the retreived objects are not instances of the
@@ -1530,9 +1530,9 @@ def get(keys, **kwargs):
 
     Returns:
       If a single key was given: a Model instance associated with key
-      for if it exists in the datastore, otherwise None; if a list of
-      keys was given: a list whose items are either a Model instance or
-      None.
+      if it exists in the datastore, otherwise None. If a list of keys was
+      given: a list where list[i] is the Model instance for keys[i], or
+      None if no instance exists.
   """
   return get_async(keys, **kwargs).get_result()
 
@@ -1564,7 +1564,8 @@ def put(models, **kwargs):
       specified as a keyword argument.
 
   Returns:
-    A Key or a list of Keys (corresponding to the argument's plurality).
+    A Key if models is an instance, a list of Keys in the same order
+    as models if models is a list.
 
   Raises:
     TransactionFailedError if the data could not be committed.
