@@ -249,6 +249,8 @@ class BaseRequestHandler(webapp.RequestHandler):
     if 'X-AppEngine-Datastore-Admin-Enabled' in self.request.headers:
       values['datastore_admin_path'] = base_path + DatastoreAdminHandler.PATH
 
+    values['interactive_console'] = self.interactive_console_enabled()
+
     values.update(template_values)
     directory = os.path.dirname(__file__)
     path = os.path.join(directory, os.path.join('templates', template_name))
@@ -292,6 +294,10 @@ class BaseRequestHandler(webapp.RequestHandler):
       return False
     return not server_software.startswith('Development')
 
+  def interactive_console_enabled(self):
+    return 'True' == self.request.headers.get(
+        'X-AppEngine-Interactive-Console-Enabled', 'True')
+
 
 class DefaultPageHandler(BaseRequestHandler):
   """Redirects to the Datastore application by default."""
@@ -333,25 +339,28 @@ class InteractiveExecuteHandler(BaseRequestHandler):
 
   @xsrf_required
   def post(self):
+    if self.interactive_console_enabled():
 
-    save_stdout = sys.stdout
-    results_io = cStringIO.StringIO()
-    try:
-      sys.stdout = results_io
-
-
-      code = self.request.get('code')
-      code = code.replace("\r\n", "\n")
-
+      save_stdout = sys.stdout
+      results_io = cStringIO.StringIO()
       try:
-        compiled_code = compile(code, '<string>', 'exec')
-        exec(compiled_code, globals())
-      except Exception, e:
-        traceback.print_exc(file=results_io)
-    finally:
-      sys.stdout = save_stdout
+        sys.stdout = results_io
 
-    results = results_io.getvalue()
+
+        code = self.request.get('code')
+        code = code.replace("\r\n", "\n")
+
+        try:
+          compiled_code = compile(code, '<string>', 'exec')
+          exec(compiled_code, globals())
+        except Exception, e:
+          traceback.print_exc(file=results_io)
+      finally:
+        sys.stdout = save_stdout
+
+      results = results_io.getvalue()
+    else:
+      results = 'Interactive console disabled for security.'
     self.generate('interactive-output.html', {'output': results})
 
 
@@ -446,7 +455,7 @@ class TaskQueueHelper(object):
       now: The current time. A datetime.datetime object with a utc timezone.
 
     Returns:
-      A list of queue dicts corrosponding to the tasks for this application.
+      A list of queue dicts corresponding to the tasks for this application.
     """
     request = taskqueue_service_pb.TaskQueueFetchQueuesRequest()
     request.set_max_rows(1000)
@@ -1803,7 +1812,7 @@ class SearchBatchDeleteHandler(BaseRequestHandler):
         docs.append(key)
 
     index = search.Index(name=index_name, namespace=namespace)
-    index.delete_documents(docs)
+    index.remove(docs)
     self.redirect(self.request.get('next'))
 
 

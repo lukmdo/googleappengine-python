@@ -1098,15 +1098,28 @@ class VacuumIndexesOperation(IndexOperation):
 class LogsRequester(object):
   """Provide facilities to export request logs."""
 
-  def __init__(self, rpcserver, config, output_file,
-               num_days, append, severity, end, vhost, include_vhost,
-               include_all=None, time_func=time.time):
+  def __init__(self,
+               rpcserver,
+               app_id,
+               server,
+               version_id,
+               output_file,
+               num_days,
+               append,
+               severity,
+               end,
+               vhost,
+               include_vhost,
+               include_all=None,
+               time_func=time.time):
     """Constructor.
 
     Args:
       rpcserver: The RPC server to use.  Should be an instance of HttpRpcServer
         or TestRpcServer.
-      config: appinfo.AppInfoExternal configuration object.
+      app_id: The application to fetch logs from.
+      server: The server of the app to fetch logs from, optional.
+      version_id: The version of the app to fetch logs for.
       output_file: Output file name.
       num_days: Number of days worth of logs to export; 0 for all available.
       append: True if appending to an existing file.
@@ -1120,7 +1133,7 @@ class LogsRequester(object):
     """
 
     self.rpcserver = rpcserver
-    self.config = config
+    self.app_id = app_id
     self.output_file = output_file
     self.append = append
     self.num_days = num_days
@@ -1129,7 +1142,8 @@ class LogsRequester(object):
     self.include_vhost = include_vhost
     self.include_all = include_all
 
-    self.version_id = self.config.version + '.1'
+    self.server = server
+    self.version_id = version_id
     self.sentinel = None
     self.write_mode = 'w'
     if self.append:
@@ -1157,8 +1171,12 @@ class LogsRequester(object):
     self.output_file, or to stdout if the filename is '-'.
     Multiple roundtrips to the server may be made.
     """
-    StatusUpdate('Downloading request logs for %s %s.' %
-                 (self.config.application, self.version_id))
+    if self.server:
+      StatusUpdate('Downloading request logs for app %s server %s version %s.' %
+                   (self.app_id, self.server, self.version_id))
+    else:
+      StatusUpdate('Downloading request logs for app %s version %s.' %
+                   (self.app_id, self.version_id))
 
 
 
@@ -1209,10 +1227,12 @@ class LogsRequester(object):
       request should be issued; or None, if not.
     """
     logging.info('Request with offset %r.', offset)
-    kwds = {'app_id': self.config.application,
+    kwds = {'app_id': self.app_id,
             'version': self.version_id,
             'limit': 1000,
            }
+    if self.server:
+      kwds['server'] = self.server
     if offset:
       kwds['offset'] = offset
     if self.severity is not None:
@@ -2663,9 +2683,13 @@ class AppCfgApp(object):
                       dest='passin', default=False,
                       help='Read the login password from stdin.')
     parser.add_option('-A', '--application', action='store', dest='app_id',
-                      help='Override application from app.yaml file.')
+                      help=('Set the application, overriding the application '
+                            'value from app.yaml file.'))
+    parser.add_option('-S', '--server_id', action='store', dest='server_id',
+                      help=optparse.SUPPRESS_HELP)
     parser.add_option('-V', '--version', action='store', dest='version',
-                      help='Override (major) version from app.yaml file.')
+                      help=('Set the (major) version, overriding the version '
+                            'value from app.yaml file.'))
     parser.add_option('-r', '--runtime', action='store', dest='runtime',
                       help='Override runtime from app.yaml file.')
     parser.add_option('-R', '--allow_any_runtime', action='store_true',
@@ -3365,13 +3389,19 @@ class AppCfgApp(object):
                               payload=backends_yaml.ToYAML())
     print >> self.out_fh, response
 
-  def Start(self):
-    """Starts a server."""
-    if len(self.args) < 1:
-      self.parser.error('Expected at least one <file> argument.')
+  def _ParseAndValidateServerYamls(self, yaml_paths):
+    """Validates given yaml paths and returns the parsed yaml objects.
 
-    servers_to_process = []
-    for yaml_path in self.args:
+    Args:
+      yaml_paths: List of paths to AppInfo yaml files.
+
+    Returns:
+      List of parsed AppInfo yamls.
+    """
+    results = []
+    app_id = None
+    last_yaml_path = None
+    for yaml_path in yaml_paths:
       file_name = os.path.basename(yaml_path)
       base_path = os.path.dirname(yaml_path)
       if not base_path:
@@ -3380,20 +3410,86 @@ class AppCfgApp(object):
                                                os.path.splitext(file_name)[0])
 
       if not server_yaml.server and file_name != 'app.yaml':
-        ErrorUpdate("Error: 'server' parameter not specified in %s" % yaml_path)
-        return
+        _PrintErrorAndExit(
+            self.error_fh,
+            "Error: 'server' parameter not specified in %s" % yaml_path)
 
-      servers_to_process.append(server_yaml)
+
+
+      if app_id is not None and server_yaml.application != app_id:
+        _PrintErrorAndExit(
+            self.error_fh,
+            "Error: 'application' value '%s' in %s does not match the value "
+            "'%s', found in %s" % (server_yaml.application,
+                                   yaml_path,
+                                   app_id,
+                                   last_yaml_path))
+      app_id = server_yaml.application
+      last_yaml_path = yaml_path
+      results.append(server_yaml)
+
+    return results
+
+  def _ServerAction(self, action_path):
+    """Process flags and yaml files and make a call to the given path.
+
+    The 'start' and 'stop' actions are extremely similar in how they process
+    input to appcfg.py and only really differ in what path they hit on the
+    RPCServer.
+
+    Args:
+      action_path: Path on the RPCServer to send the call to.
+    """
+
+    servers_to_process = []
+    if len(self.args) == 0:
+
+      if not (self.options.app_id and
+              self.options.server_id and
+              self.options.version):
+        _PrintErrorAndExit(self.error_fh,
+                          'Expected at least one <file> argument or the '
+                          '--app_id, --server_id and --version flags to be '
+                          'set.')
+      else:
+        servers_to_process.append((self.options.app_id,
+                                   self.options.server_id,
+                                   self.options.version))
+    else:
+
+
+      if self.options.server_id:
+
+        _PrintErrorAndExit(self.error_fh,
+                          'You may not specify a <file> argument with the '
+                          '--server_id flag.')
+
+      server_yamls = self._ParseAndValidateServerYamls(self.args)
+      for yaml in server_yamls:
+
+
+        app_id = yaml.application
+        servers_to_process.append((self.options.app_id or yaml.application,
+                                   yaml.server or appinfo.DEFAULT_SERVER,
+                                   self.options.version or yaml.version))
 
     rpcserver = self._GetRpcServer()
-    for server_yaml in servers_to_process:
 
 
-
-      response = rpcserver.Send('/api/servers/start',
-                                app_id=server_yaml.application,
-                                server=server_yaml.server)
+    for app_id, server, version in servers_to_process:
+      response = rpcserver.Send(action_path,
+                                app_id=app_id,
+                                server=server,
+                                version=version)
       print >> self.out_fh, response
+
+  def Start(self):
+    """Starts one or more servers."""
+    self._ServerAction('/api/servers/start')
+
+  def Stop(self):
+    """Stops one or more servers."""
+    self._ServerAction('/api/servers/stop')
 
   def Rollback(self):
     """Does a rollback of an existing transaction for this app version."""
@@ -3442,9 +3538,30 @@ class AppCfgApp(object):
 
   def RequestLogs(self):
     """Write request logs to a file."""
-    if len(self.args) != 1:
-      self.parser.error(
-          'Expected a <directory> argument and an <output_file> argument.')
+
+    args_length = len(self.args)
+    server = ''
+    if args_length == 2:
+      appyaml = self._ParseAppInfoFromYaml(self.args.pop(0))
+      app_id = appyaml.application
+      server = appyaml.server or ''
+      version = appyaml.version
+    elif args_length == 1:
+      if not (self.options.app_id and self.options.version):
+        self.parser.error(
+            ('Expected a --app_id and --version flags if <directory> argument '
+             'is not specified.'))
+    else:
+      self._PrintHelpAndExit()
+
+
+    if self.options.app_id:
+      app_id = self.options.app_id
+    if self.options.server_id:
+      server = self.options.server_id
+    if self.options.version:
+      version = self.options.version
+
     if (self.options.severity is not None and
         not 0 <= self.options.severity <= MAX_LOG_LEVEL):
       self.parser.error(
@@ -3459,8 +3576,12 @@ class AppCfgApp(object):
       self.parser.error('End date must be in the format YYYY-MM-DD.')
 
     rpcserver = self._GetRpcServer()
-    appyaml = self._ParseAppInfoFromYaml(self.basepath)
-    logs_requester = LogsRequester(rpcserver, appyaml, self.args[0],
+
+    logs_requester = LogsRequester(rpcserver,
+                                   app_id,
+                                   server,
+                                   version,
+                                   self.args[0],
                                    self.options.num_days,
                                    self.options.append,
                                    self.options.severity,
@@ -4088,15 +4209,16 @@ and want to begin a new update transaction."""),
 
       'request_logs': Action(
           function='RequestLogs',
-          usage='%prog [options] request_logs <directory> <output_file>',
+          usage='%prog [options] request_logs [<directory>] <output_file>',
           options=_RequestLogsOptions,
+          uses_basepath=False,
           short_desc='Write request logs in Apache common log format.',
           long_desc="""
 The 'request_logs' command exports the request logs from your application
 to a file.  It will write Apache common log format records ordered
 chronologically.  If output file is '-' stdout will be written.""",
           error_desc="""\
-Expected a <directory> and <output_file> arguments."""),
+Expected an optional <directory> and mandatory <output_file> argument."""),
 
       'cron_info': Action(
           function='CronInfo',
@@ -4113,10 +4235,19 @@ each cron job defined in the cron.yaml file."""),
           function='Start',
           hidden=True,
           uses_basepath=False,
-          usage='%prog [options] start <file> [file, ...]',
-          short_desc='Start a backend.',
+          usage='%prog [options] start [file, ...]',
+          short_desc='Start a server version.',
           long_desc="""
-The 'start' command will put a backend into the START state."""),
+The 'start' command will put a server version into the START state."""),
+
+      'stop': Action(
+          function='Stop',
+          hidden=True,
+          uses_basepath=False,
+          usage='%prog [options] stop [file, ...]',
+          short_desc='Stop a server version.',
+          long_desc="""
+The 'stop' command will put a server version into the STOP state."""),
 
 
 

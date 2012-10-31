@@ -412,6 +412,10 @@ def _perform_backup(kinds,
   INPUT_READER = __name__ + '.DatastoreEntityProtoInputReader'
   OUTPUT_WRITER = output_writers.__name__ + '.FileRecordsOutputWriter'
 
+  queue = queue or os.environ.get('HTTP_X_APPENGINE_QUEUENAME', 'default')
+  if queue[0] == '_':
+
+    queue = 'default'
   if not filesystem:
     filesystem = files.BLOBSTORE_FILESYSTEM
   if filesystem == files.GS_FILESYSTEM:
@@ -924,6 +928,7 @@ def BackupCompleteHandler(operation, job_id, mapreduce_state):
       deferred.defer(finalize_backup_info, backup_info.key(),
                      mapreduce_spec.mapper.params,
                      _url=utils.ConfigDefaults.DEFERRED_PATH,
+                     _queue=mapreduce_spec.params.get('done_callback_queue'),
                      _transactional=True)
   else:
     logging.warn('BackupInfo was not found for %s',

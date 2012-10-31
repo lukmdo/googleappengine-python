@@ -83,7 +83,6 @@ import urllib
 import zlib
 
 import google
-from google.pyglib import gexcept
 
 
 
@@ -224,6 +223,16 @@ DEVEL_PAYLOAD_RAW_HEADER = 'X-AppEngine-Development-Payload'
 
 DEVEL_FAKE_IS_ADMIN_HEADER = 'HTTP_X_APPENGINE_FAKE_IS_ADMIN'
 DEVEL_FAKE_IS_ADMIN_RAW_HEADER = 'X-AppEngine-Fake-Is-Admin'
+
+FILE_STUB_DEPRECATION_MESSAGE = (
+"""The datastore file stub is deprecated, and
+will stop being the default in a future release.
+Append the --use_sqlite flag to use the new SQLite stub.
+
+You can port your existing data using the --port_sqlite_data flag or
+purge your previous test data with --clear_datastore.
+""")
+
 
 
 
@@ -730,8 +739,20 @@ class MatcherDispatcher(URLDispatcher):
 
 
 
-_IGNORE_REQUEST_HEADERS = frozenset(['content-type', 'content-length',
-                                     'accept-encoding', 'transfer-encoding'])
+
+_IGNORE_REQUEST_HEADERS = frozenset([
+    'accept-encoding',
+    'connection',
+    'keep-alive',
+    'proxy-authorization',
+    'te',
+    'trailer',
+    'transfer-encoding',
+
+
+    'content-type',
+    'content-length',
+    ])
 
 
 _request_id = 0
@@ -2146,9 +2167,18 @@ class FileDispatcher(URLDispatcher):
 
 
 
+
 _IGNORE_RESPONSE_HEADERS = frozenset([
-    'content-encoding', 'transfer-encoding',
-    'server', 'date', blobstore.BLOB_KEY_HEADER
+    'connection',
+    'content-encoding',
+    'date',
+    'keep-alive',
+    'proxy-authenticate',
+    'server',
+    'trailer',
+    'transfer-encoding',
+    'upgrade',
+    blobstore.BLOB_KEY_HEADER
     ])
 
 
@@ -2536,7 +2566,6 @@ class ModuleManager(object):
     Returns:
       True if one or more files have been modified, False otherwise.
     """
-    self._dirty = True
     for name, (mtime, fname) in self._modification_times.iteritems():
 
       if name not in self._modules:
@@ -2544,13 +2573,17 @@ class ModuleManager(object):
 
       module = self._modules[name]
 
+      try:
 
-      if not os.path.isfile(fname):
-        return True
+        if mtime != os.path.getmtime(fname):
+          self._dirty = True
+          return True
+      except OSError, e:
 
-
-      if mtime != os.path.getmtime(fname):
-        return True
+        if e.errno in FILE_MISSING_EXCEPTIONS:
+          self._dirty = True
+          return True
+        raise e
 
     return False
 
@@ -2645,7 +2678,8 @@ def CreateRequestHandler(root_path,
                          login_url,
                          static_caching=True,
                          default_partition=None,
-                         persist_logs=False):
+                         persist_logs=False,
+                         interactive_console=True):
   """Creates a new BaseHTTPRequestHandler sub-class.
 
   This class will be used with the Python BaseHTTPServer module's HTTP server.
@@ -2661,6 +2695,7 @@ def CreateRequestHandler(root_path,
     static_caching: True if browser caching of static files should be allowed.
     default_partition: Default partition to use in the application id.
     persist_logs: If true, log records should be durably persisted.
+    interactive_console: Whether to add the interactive console.
 
   Returns:
     Sub-class of BaseHTTPRequestHandler.
@@ -2889,6 +2924,8 @@ def CreateRequestHandler(root_path,
           if any((handler.url == '/_ah/datastore_admin.*'
                   for handler in config.handlers)):
             self.headers['X-AppEngine-Datastore-Admin-Enabled'] = 'True'
+          self.headers['X-AppEngine-Interactive-Console-Enabled'] = str(
+              interactive_console)
 
         if config.api_version != API_VERSION:
           logging.error(
@@ -2921,7 +2958,6 @@ def CreateRequestHandler(root_path,
 
 
 
-        global _request_id
         request_id_hash = _generate_request_id_hash()
         env_dict['REQUEST_ID_HASH'] = request_id_hash
         os.environ['REQUEST_ID_HASH'] = request_id_hash
@@ -3282,41 +3318,38 @@ def LoadAppConfig(root_path,
         cache.config = cache.matcher = cache.path = None
         cache.mtime = mtime
 
-      try:
-        config = read_app_config(appinfo_path, appinfo_includes.Parse)
+      config = read_app_config(appinfo_path, appinfo_includes.Parse)
 
-        if config.application:
-          config.application = AppIdWithDefaultPartition(config.application,
-                                                         default_partition)
-        multiprocess.GlobalProcess().NewAppInfo(config)
+      if config.application:
+        config.application = AppIdWithDefaultPartition(config.application,
+                                                       default_partition)
+      multiprocess.GlobalProcess().NewAppInfo(config)
 
-        if static_caching:
-          if config.default_expiration:
-            default_expiration = config.default_expiration
-          else:
-
-
-            default_expiration = '0'
+      if static_caching:
+        if config.default_expiration:
+          default_expiration = config.default_expiration
         else:
 
-          default_expiration = None
 
-        matcher = create_matcher(config,
-                                 root_path,
-                                 config.handlers,
-                                 module_dict,
-                                 default_expiration)
+          default_expiration = '0'
+      else:
 
-        FakeFile.SetSkippedFiles(config.skip_files)
+        default_expiration = None
 
-        if cache is not None:
-          cache.path = appinfo_path
-          cache.config = config
-          cache.matcher = matcher
+      matcher = create_matcher(config,
+                               root_path,
+                               config.handlers,
+                               module_dict,
+                               default_expiration)
 
-        return (config, matcher, False)
-      except gexcept.AbstractMethod:
-        pass
+      FakeFile.SetSkippedFiles(config.skip_files)
+
+      if cache is not None:
+        cache.path = appinfo_path
+        cache.config = config
+        cache.matcher = matcher
+
+      return config, matcher, False
 
   raise AppConfigNotFoundError(
       'Could not find app.yaml in "%s".' % (root_path,))
@@ -3524,6 +3557,7 @@ def SetupStubs(app_id, **config):
             trusted=trusted, root_path=root_path,
             use_atexit=_use_atexit_for_datastore_stub)
     else:
+      logging.warning(FILE_STUB_DEPRECATION_MESSAGE)
       datastore = datastore_file_stub.DatastoreFileStub(
           app_id, datastore_path, require_indexes=require_indexes,
           trusted=trusted, root_path=root_path,
@@ -3844,7 +3878,8 @@ def CreateServer(root_path,
                  sdk_dir=SDK_ROOT,
                  default_partition=None,
                  persist_logs=False,
-                 frontend_port=None):
+                 frontend_port=None,
+                 interactive_console=True):
   """Creates a new HTTPServer for an application.
 
   The sdk_dir argument must be specified for the directory storing all code for
@@ -3867,10 +3902,12 @@ def CreateServer(root_path,
     persist_logs: If true, log records should be durably persisted.
     frontend_port: A frontend port (so backends can return an address for a
       frontend). If None, port will be used.
+    interactive_console: Whether to add the interactive console.
 
   Returns:
     Instance of BaseHTTPServer.HTTPServer that's ready to start accepting.
   """
+
 
 
 
@@ -3885,7 +3922,8 @@ def CreateServer(root_path,
                                        login_url,
                                        static_caching,
                                        default_partition,
-                                       persist_logs)
+                                       persist_logs,
+                                       interactive_console)
 
 
   if absolute_root_path not in python_path_list:

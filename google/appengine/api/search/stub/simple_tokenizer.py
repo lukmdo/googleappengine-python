@@ -28,8 +28,29 @@ from google.appengine.datastore import document_pb
 from google.appengine.api.search.stub import tokens
 
 
+
+_WORD_SEPARATORS = [
+    r'!', r'\"', r'%', r'\(', r'\)', r'\*', r',', r'\.', r'/', r'\:', r'=',
+    r'>', r'\?', r'@', r'\[', r'\\', r'\]', r'\^', r'\`', r'\{', r'\|', r'\}',
+    r'~', r'\t', r'\n', r'\f', r'\r', r' ', r'&', r'#', r'$', r';']
+_WORD_SEPARATOR_RE = re.compile('|'.join(_WORD_SEPARATORS))
+
+
+def _StripSeparators(value):
+  """Remove special characters and collapse spaces."""
+  return re.sub(r'  [ ]*', ' ', re.sub(_WORD_SEPARATOR_RE, ' ', value))
+
+
+def NormalizeString(value):
+  """Lowers case, removes punctuation and collapses whitespace."""
+  return _StripSeparators(value).lower().strip()
+
+
 class SimpleTokenizer(object):
-  """A tokenizer which converts text to lower case and splits on whitespace."""
+  """A tokenizer which converts text to a normalized stream of tokens.
+
+  Text normalization lowers case, removes punctuation and splits on whitespace.
+  """
 
   def __init__(self, split_restricts=True, preserve_case=False):
     self._split_restricts = split_restricts
@@ -57,15 +78,18 @@ class SimpleTokenizer(object):
                                    value=field_value.geo(),
                                    token_position=token_position)
     return self._TokenizeForType(field_type=field_value.type(),
-                                 value=field_value.string_value(),
-                                 token_position=token_position)
+                                   value=field_value.string_value(),
+                                   token_position=token_position)
 
   def _TokenizeString(self, value, field_type):
-    if field_type is document_pb.FieldValue.HTML:
-      return self.SetCase(self._StripHtmlTags(value)).split()
-    if field_type is document_pb.FieldValue.ATOM:
-      return [self.SetCase(value)]
-    return self.SetCase(value).split()
+    value = self.SetCase(value)
+    if field_type is not document_pb.FieldValue.ATOM:
+      if field_type is document_pb.FieldValue.HTML:
+        value = self._StripHtmlTags(value)
+      value = _StripSeparators(value)
+      return value.split()
+    else:
+      return [value]
 
   def _StripHtmlTags(self, value):
     """Replace HTML tags with spaces."""

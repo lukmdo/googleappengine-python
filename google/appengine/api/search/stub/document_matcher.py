@@ -28,19 +28,21 @@ matching.
 
 from google.appengine.datastore import document_pb
 
+from google.appengine._internal.antlr3 import tree
 from google.appengine.api.search import query_parser
 from google.appengine.api.search import QueryParser
 from google.appengine.api.search import search_util
+from google.appengine.api.search.stub import simple_tokenizer
 from google.appengine.api.search.stub import tokens
 
 
 class DocumentMatcher(object):
   """A class to match documents with a query."""
 
-  def __init__(self, query, parser, inverted_index):
+  def __init__(self, query, inverted_index):
     self._query = query
     self._inverted_index = inverted_index
-    self._parser = parser
+    self._parser = simple_tokenizer.SimpleTokenizer()
 
   def _PostingsForToken(self, token):
     """Returns the postings for the token."""
@@ -48,21 +50,23 @@ class DocumentMatcher(object):
 
   def _PostingsForFieldToken(self, field, value):
     """Returns postings for the value occurring in the given field."""
+    value = simple_tokenizer.NormalizeString(value)
     return self._PostingsForToken(
-        tokens.Token(chars=value.lower(), field_name=field))
-
-  def _SplitPhrase(self, phrase):
-    """Returns the list of tokens for the phrase."""
-    phrase = phrase[1:len(phrase) - 1]
-    return self._parser.TokenizeText(phrase)
+        tokens.Token(chars=value, field_name=field))
 
   def _MatchPhrase(self, field, match, document):
     """Match a textual field with a phrase query node."""
-    phrase = self._SplitPhrase(query_parser.GetQueryNodeText(match))
+    field_text = field.value().string_value()
+    phrase_text = query_parser.GetPhraseQueryNodeText(match)
+
+
+    if field.value().type() == document_pb.FieldValue.ATOM:
+      return (field_text == phrase_text)
+
+    phrase = self._parser.TokenizeText(phrase_text)
+    field_text = self._parser.TokenizeText(field_text)
     if not phrase:
       return True
-    field_text = self._parser.TokenizeText(field.value().string_value())
-
     posting = None
     for post in self._PostingsForFieldToken(field.name(), phrase[0].chars):
       if post.doc_id == document.id():
@@ -99,9 +103,31 @@ class DocumentMatcher(object):
 
     if (match.getType() in (QueryParser.TEXT, QueryParser.NAME) or
         match.getType() in search_util.NUMBER_QUERY_TYPES):
+
+      if field.value().type() == document_pb.FieldValue.ATOM:
+        return (field.value().string_value() ==
+                query_parser.GetQueryNodeText(match))
+
+      query_tokens = self._parser.TokenizeText(
+          query_parser.GetQueryNodeText(match))
+
+
+      if not query_tokens:
+        return True
+
+
+
+
+      if len(query_tokens) > 1:
+        def QueryNode(token):
+          return query_parser.CreateQueryNode(token.chars, QueryParser.TEXT)
+        return all(self._MatchTextField(field, QueryNode(token), document)
+                   for token in query_tokens)
+
+      token_text = query_tokens[0].chars
       matching_docids = [
           post.doc_id for post in self._PostingsForFieldToken(
-              field.name(), query_parser.GetQueryNodeText(match))]
+              field.name(), token_text)]
       return document.id() in matching_docids
 
     if match.getType() is QueryParser.PHRASE:
@@ -194,16 +220,21 @@ class DocumentMatcher(object):
         'Operator %s not supported for numerical fields on development server.'
         % match.getText())
 
-  def _MatchField(self, field_query_node, match, document):
-    """Check if a field matches a query tree."""
+  def _MatchField(self, field, match, document):
+    """Check if a field matches a query tree.
 
-    if isinstance(field_query_node, str):
-      field = search_util.GetFieldInDocument(document, field_query_node)
-    else:
-      field = search_util.GetFieldInDocument(
-          document, field_query_node.getText())
-    if not field:
-      return False
+    Args:
+      field_query_node: Either a string containing the name of a field, a query
+      node whose text is the name of the field, or a document_pb.Field.
+      match: A query node to match the field with.
+      document: The document to match.
+    """
+
+    if isinstance(field, (basestring, tree.CommonTree)):
+      if isinstance(field, tree.CommonTree):
+        field = field.getText()
+      fields = search_util.GetAllFieldInDocument(document, field)
+      return any(self._MatchField(f, match, document) for f in fields)
 
     if field.value().type() in search_util.TEXT_DOCUMENT_FIELD_TYPES:
       return self._MatchTextField(field, match, document)

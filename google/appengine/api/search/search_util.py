@@ -61,11 +61,20 @@ class UnsupportedOnDevError(Exception):
 
 
 def GetFieldInDocument(document, field_name):
-  """Find and return the field with the provided name in the document."""
+  """Find and return the first field with the provided name in the document."""
   for f in document.field_list():
     if f.name() == field_name:
       return f
   return None
+
+
+def GetAllFieldInDocument(document, field_name):
+  """Find and return all fields with the provided name in the document."""
+  fields = []
+  for f in document.field_list():
+    if f.name() == field_name:
+      fields.append(f)
+  return fields
 
 
 def AddFieldsToDocumentPb(doc_id, fields, document):

@@ -94,11 +94,17 @@ class ClientLoginError(urllib2.HTTPError):
   def __init__(self, url, code, msg, headers, args):
     urllib2.HTTPError.__init__(self, url, code, msg, headers, None)
     self.args = args
-    self.reason = args["Error"]
+    self._reason = args.get("Error")
     self.info = args.get("Info")
 
   def read(self):
     return '%d %s: %s' % (self.code, self.msg, self.reason)
+
+
+
+  @property
+  def reason(self):
+    return self._reason
 
 
 class AbstractRpcServer(object):

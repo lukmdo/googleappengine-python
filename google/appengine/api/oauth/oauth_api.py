@@ -130,12 +130,12 @@ def get_oauth_consumer_key():
   except apiproxy_errors.ApplicationError, e:
     if (e.application_error ==
         user_service_pb.UserServiceError.OAUTH_INVALID_REQUEST):
-      raise InvalidOAuthParametersError
+      raise InvalidOAuthParametersError(e.error_detail)
     elif (e.application_error ==
           user_service_pb.UserServiceError.OAUTH_ERROR):
-      raise OAuthServiceFailureError
+      raise OAuthServiceFailureError(e.error_detail)
     else:
-      raise OAuthServiceFailureError
+      raise OAuthServiceFailureError(e.error_detail)
   return resp.oauth_consumer_key()
 
 
@@ -165,6 +165,7 @@ def _maybe_call_get_oauth_user(_scope=None):
       os.environ['OAUTH_ERROR_CODE'] = ''
     except apiproxy_errors.ApplicationError, e:
       os.environ['OAUTH_ERROR_CODE'] = str(e.application_error)
+      os.environ['OAUTH_ERROR_DETAIL'] = e.error_detail
     if _scope:
       os.environ['OAUTH_LAST_SCOPE'] = _scope
     else:
@@ -181,16 +182,18 @@ def _maybe_raise_exception():
   assert 'OAUTH_ERROR_CODE' in os.environ
   error = os.environ['OAUTH_ERROR_CODE']
   if error:
+    assert 'OAUTH_ERROR_DETAIL' in os.environ
+    error_detail = os.environ['OAUTH_ERROR_DETAIL']
     if error == str(user_service_pb.UserServiceError.NOT_ALLOWED):
-      raise NotAllowedError
+      raise NotAllowedError(error_detail)
     elif error == str(user_service_pb.UserServiceError.OAUTH_INVALID_REQUEST):
-      raise InvalidOAuthParametersError
+      raise InvalidOAuthParametersError(error_detail)
     elif error == str(user_service_pb.UserServiceError.OAUTH_INVALID_TOKEN):
-      raise InvalidOAuthTokenError
+      raise InvalidOAuthTokenError(error_detail)
     elif error == str(user_service_pb.UserServiceError.OAUTH_ERROR):
-      raise OAuthServiceFailureError
+      raise OAuthServiceFailureError(error_detail)
     else:
-      raise OAuthServiceFailureError
+      raise OAuthServiceFailureError(error_detail)
 
 
 def _get_user_from_environ():

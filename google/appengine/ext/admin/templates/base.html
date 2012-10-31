@@ -45,7 +45,9 @@
               {% endif %}
               <li><a href="{{ datastore_indexes }}">Datastore Indexes</a></li>
               <li><a href="{{ datastore_stats_path }}">Datastore Stats</a></li>
+              {% if interactive_console %}
               <li><a href="{{ interactive_path }}">Interactive Console</a></li>
+              {% endif %}
               <li><a href="{{ memcache_path }}">Memcache Viewer</a></li>
               <li><a href="{{ queues_path }}">Task Queues</a></li>
               {% if cron_path %}

@@ -31,6 +31,7 @@ from __future__ import with_statement
 
 
 import os
+import random
 import threading
 import urllib
 
@@ -118,6 +119,7 @@ class APIProxyStub(object):
 
     self._mutex = threading.RLock()
     self.__error = None
+    self.__error_dict = {}
 
   def CreateRPC(self):
     """Creates RPC object instance.
@@ -148,25 +150,44 @@ class APIProxyStub(object):
     messages = []
     assert request.IsInitialized(messages), messages
 
+
+
+
+    exception_type, frequency = self.__error_dict.get(call, (None, None))
+    if exception_type and frequency:
+      if random.random() <= frequency:
+        raise exception_type
+
     if self.__error:
+      if random.random() <= self.__error_rate:
+        raise self.__error
 
 
-      raise self.__error
+    method = getattr(self, '_Dynamic_' + call)
+    if self._ACCEPTS_REQUEST_ID:
+      method(request, response, request_id)
     else:
-      method = getattr(self, '_Dynamic_' + call)
-      if self._ACCEPTS_REQUEST_ID:
-        method(request, response, request_id)
-      else:
-        method(request, response)
+      method(request, response)
 
-  def SetError(self, error):
-    """Set an error condition that is always raised when calls made to stub.
+  def SetError(self, error, method=None, error_rate=1):
+    """Set an error condition that may be raised when calls made to stub.
+
+    If a method is specified, the error will only apply to that call.
+    The error rate is applied to the method specified or all calls if
+    method is not set.
 
     Args:
       error: An instance of apiproxy_errors.Error or None for no error.
+      method: A string representing the method that the error will affect.
+      error_rate: a number from [0, 1] that sets the chance of the error,
+        defaults to 1.
     """
     assert error is None or isinstance(error, apiproxy_errors.Error)
-    self.__error = error
+    if method and error:
+      self.__error_dict[method] = error, error_rate
+    else:
+      self.__error_rate = error_rate
+      self.__error = error
 
 
 def Synchronized(method):

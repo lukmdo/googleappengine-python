@@ -210,7 +210,7 @@ class ApiConfigManager(object):
                      ReplaceReservedVariable, pattern, 2)
     pattern = re.sub('(/|^){(%s)}(?=/|$)' % _PATH_VARIABLE_PATTERN,
                      ReplaceVariable, pattern)
-    return re.compile(pattern + '$')
+    return re.compile(pattern + '/?$')
 
   def SaveRpcMethod(self, method_name, version, method):
     """Store JsonRpc api methods in a map for lookup at call time.
@@ -509,12 +509,12 @@ def CreateApiserverDispatcher(config_manager=None):
         AppServerRequest for redirect or None to send immediate CGI response.
       """
       if self.request.IsRpc():
-        method = self.LookupRpcMethod()
+        method_config = self.LookupRpcMethod()
         params = None
       else:
-        method, params = self.LookupRestMethod()
-      if method:
-        self.TransformRequest(params)
+        method_config, params = self.LookupRestMethod()
+      if method_config:
+        self.TransformRequest(params, method_config)
         self._request_stage = self.RequestState.SPI_CALL
         return BuildCGIRequest(self.request.cgi_env, self.request,
                                dev_appserver)
@@ -536,7 +536,18 @@ def CreateApiserverDispatcher(config_manager=None):
 
       response = dev_appserver.AppServerResponse(
           response_file=dispatched_output)
-      headers, body = self.ParseCgiResponse(response)
+      response_headers, body = self.ParseCgiResponse(response)
+
+
+
+      headers = {}
+      for header, value in response_headers.items():
+        if (header.lower() == 'content-type' and
+            not value.lower().startswith('application/json')):
+          return self.FailRequest('Non-JSON reply: %s' % body, outfile)
+        elif header.lower() not in ('content-length', 'content-type'):
+          headers[header] = value
+
       if self.request.IsRpc():
         body = self.TransformJsonrpcResponse(body)
       self._request_stage = self.RequestState.END
@@ -553,8 +564,10 @@ def CreateApiserverDispatcher(config_manager=None):
         None
       """
       self._request_stage = self.RequestState.END
-      return SendCGIResponse('500', {'Content-Type': 'text/plain'},
-                             message, outfile)
+
+      body = json.dumps({'error': {'message': message}})
+      return SendCGIResponse('500', {'Content-Type': 'application/json'},
+                             body, outfile)
 
     def LookupRestMethod(self):
       """Looks up and returns rest method for the currently-pending request.
@@ -584,10 +597,10 @@ def CreateApiserverDispatcher(config_manager=None):
       self.request.method_name = method_name
       return self.config_manager.LookupRpcMethod(method_name, version)
 
-    def TransformRequest(self, params):
+    def TransformRequest(self, params, method_config):
       """Transforms self.request to apiserving request.
 
-      This method uses self.request to determint the currently-pending request.
+      This method uses self.request to determine the currently-pending request.
       This method accepts a rest-style or RPC-style request.
 
       Side effects:
@@ -596,12 +609,13 @@ def CreateApiserverDispatcher(config_manager=None):
 
       Args:
         params: Path parameters dictionary for rest request
+        method_config: API config of the method to be called
       """
       if self.request.IsRpc():
         self.TransformJsonrpcRequest()
       else:
         self.TransformRestRequest(params)
-      self.request.path = self.request.method_name
+      self.request.path = method_config.get('rosyMethod', '')
 
     def TransformRestRequest(self, params):
       """Translates a Rest request/response into an apiserving request/response.

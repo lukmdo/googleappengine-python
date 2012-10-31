@@ -291,6 +291,7 @@ def ParseRate(rate):
   if unit == 'd':
     return number/(24 * 60 * 60)
 
+
 def ParseTotalStorageLimit(limit):
   """Parses a string representing the storage bytes limit.
 
@@ -325,6 +326,7 @@ def ParseTotalStorageLimit(limit):
   except ValueError:
     raise MalformedQueueConfiguration('Total Storage Limit "%s" is invalid.' %
                                       limit)
+
 
 def ParseTaskAgeLimit(age_limit):
   """Parses a string representing the task's age limit (maximum allowed age).
@@ -405,9 +407,9 @@ def TranslateRetryParameters(retry):
       params.set_min_backoff_sec(params.max_backoff_sec())
 
 
-  if params.has_retry_limit() and not params.retry_limit() > 0:
+  if params.has_retry_limit() and params.retry_limit() < 0:
     raise MalformedQueueConfiguration(
-        'Task retry limit must be greater than zero.')
+        'Task retry limit must not be less than zero.')
 
   if params.has_age_limit_sec() and not params.age_limit_sec() > 0:
     raise MalformedQueueConfiguration(

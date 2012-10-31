@@ -3,6 +3,49 @@ All rights reserved.
 
 App Engine Python SDK - Release Notes
 
+Version 1.7.3
+===============================
+- Django 1.4 is now supported in Python 2.7
+- The file-based implementation of the Datastore stub will be deprecated soon.
+  A warning message informing users that SQLLite stub will be the default
+  stub soon is now displayed.
+- Datastore Index stats now report type instead of representation-type.
+- Rich sort expressions beyond single field names are now supported in the
+  Search API for dev_appserver.
+- search.MIN_NUMBER_VALUE and search.MAX_NUMBER_VALUE are now public in the
+  Search API.
+- Globally Consistent Indexes are now deprecated in the Search API.
+- search.list_indexes() has been deprecated and replaced with
+  search.get_indexes() in the Search API.
+- Index.list_documents() has been deprecated and replaced with
+  Index.get_range() in the Search API.
+- Added method Index.get(doc_id) to get a document by its ID in the Search API
+- Index.add() has been deprecated and renamed to Index.put() in the Search API.
+- Index.remove() has been deprecated and renamed to Index.delete() in the
+  Search API.
+- The AddDocumentError and RemoveDocumentError classes, which were already
+  deprecated, have been removed from the Search API.
+- OperationCode.object_id and OperationCode.document_id, which were already
+  deprecated, have been removed from the Search API.
+- Users can now change authentication options after app creation
+    http://code.google.com/p/googleappengine/issues/detail?id=483
+- Fixed an issue with Datastore backup/restore finalization steps only looking
+  at the default queue in Admin Console.
+- Fixed an NDB issue with Structured Properties not converting dict properly.
+    http://code.google.com/p/appengine-ndb-experiment/issues/detail?id=207
+- Fixed an NDB issue where multiple async transactions corrupt old
+  Datastore connections.
+    http://code.google.com/p/appengine-ndb-experiment/issues/detail?id=209
+- Fixed an NDB issue with fetch() with offset > 1000 returning an empty list.
+    http://code.google.com/p/appengine-ndb-experiment/issues/detail?id=210
+- Fixed an issue with 2 factor authentication not giving useful error messages.
+    http://code.google.com/p/googleappengine/issues/detail?id=8020
+- Fixed an issue in the Search API snippeting breaking if the field contains
+  a single word in dev_appserver.
+    http://code.google.com/p/googleappengine/issues/detail?id=8171
+- Fixed an issue with PyCrypto AES cipher not running on dev_appserver.
+    http://code.google.com/p/googleappengine/issues/detail?id=8188
+
 Version 1.7.2
 ===============================
 - Paid applications can now upload Static files and Code > 1GB. Additional

@@ -489,6 +489,8 @@ def StartMap(operation_key,
       str(operation_key))
   mapreduce_params['done_callback'] = '%s/%s' % (config.BASE_PATH,
                                                  MapreduceDoneHandler.SUFFIX)
+  if queue_name is not None:
+    mapreduce_params['done_callback_queue'] = queue_name
   mapreduce_params['force_writes'] = 'True'
 
   def tx():

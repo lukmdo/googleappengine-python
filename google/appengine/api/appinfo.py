@@ -60,8 +60,9 @@ _START_PATH = '/_ah/start'
 
 
 
-_ALLOWED_SERVICES = ['mail', 'xmpp_message', 'xmpp_subscribe', 'xmpp_presence',
-                     'xmpp_error', 'channel_presence', 'rest', 'warmup']
+_ALLOWED_SERVICES = ['mail', 'mail_bounce', 'xmpp_message', 'xmpp_subscribe',
+                     'xmpp_presence', 'xmpp_error', 'channel_presence', 'rest',
+                     'warmup']
 _SERVICE_RE_STRING = '(' + '|'.join(_ALLOWED_SERVICES) + ')'
 
 
@@ -106,21 +107,21 @@ PARTITION_RE_STRING = (r'[a-z\d\-]{1,%d}\%s' %
                        (APP_ID_MAX_LEN, PARTITION_SEPARATOR))
 DOMAIN_RE_STRING = (r'(?!\-)[a-z\d\-\.]{1,%d}%s' %
                     (APP_ID_MAX_LEN, DOMAIN_SEPARATOR))
-DISPLAY_APP_ID_RE_STRING = r'(?!-)[a-z\d\-]{1,%d}' % APP_ID_MAX_LEN
+DISPLAY_APP_ID_RE_STRING = r'(?!-)[a-z\d\-]{0,%d}[a-z\d]' % (APP_ID_MAX_LEN - 1)
 APPLICATION_RE_STRING = (r'(?:%s)?(?:%s)?%s' %
                          (PARTITION_RE_STRING,
                           DOMAIN_RE_STRING,
                           DISPLAY_APP_ID_RE_STRING))
 
-SERVER_ID_RE_STRING = r'^(?!-)[a-z\d\-]{1,%d}$' % SERVER_ID_MAX_LEN
+SERVER_ID_RE_STRING = r'^(?!-)[a-z\d\-]{0,%d}[a-z\d]$' % (SERVER_ID_MAX_LEN - 1)
 
 
 
 
 
 
-SERVER_VERSION_ID_RE_STRING = (r'^(?!-)[a-z\d\-]{1,%d}$' %
-                               SERVER_VERSION_ID_MAX_LEN)
+SERVER_VERSION_ID_RE_STRING = (r'^(?!-)[a-z\d\-]{0,%d}[a-z\d]$' %
+                               (SERVER_VERSION_ID_MAX_LEN - 1))
 
 _INSTANCES_REGEX = r'^([\d]+|automatic)$'
 _INSTANCE_CLASS_REGEX = r'^([fF](1|2|4)|[bB](1|2|4|8))$'
@@ -294,7 +295,9 @@ _SUPPORTED_LIBRARIES = [
         'django',
         'http://www.djangoproject.com/',
         'A full-featured web application framework for Python.',
-        ['1.2', '1.3']),
+        ['1.2', '1.3', '1.4'],
+        experimental_versions=['1.4']
+        ),
     _VersionedLibrary(
         'jinja2',
         'http://jinja.pocoo.org/docs/',
@@ -349,9 +352,8 @@ _SUPPORTED_LIBRARIES = [
         'webob',
         'http://www.webob.org/',
         'A library that provides wrappers around the WSGI request environment.',
-        ['1.1.1', '1.2.2'],
+        ['1.1.1'],
         default_version='1.1.1',
-        experimental_versions=['1.2.2']
         ),
     _VersionedLibrary(
         'yaml',

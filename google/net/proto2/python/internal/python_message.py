@@ -752,8 +752,8 @@ def _AddSerializeToStringMethod(message_descriptor, cls):
     errors = []
     if not self.IsInitialized():
       raise message_mod.EncodeError(
-          'Message is missing required fields: ' +
-          ','.join(self.FindInitializationErrors()))
+          'Message %s is missing required fields: %s' % (
+          self.DESCRIPTOR.full_name, ','.join(self.FindInitializationErrors())))
     return self.SerializePartialToString()
   cls.SerializeToString = SerializeToString
 
@@ -907,7 +907,8 @@ def _AddMergeFromMethod(cls):
   def MergeFrom(self, msg):
     if not isinstance(msg, cls):
       raise TypeError(
-          "Parameter to MergeFrom() must be instance of same class.")
+          "Parameter to MergeFrom() must be instance of same class: "
+          "expected %s got %s." % (cls.__name__, type(msg).__name__))
 
     assert msg is not self
     self._Modified()

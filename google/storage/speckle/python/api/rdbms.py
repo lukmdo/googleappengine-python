@@ -243,6 +243,8 @@ class Cursor(object):
     self._open = True
     self.lastrowid = None
     self._use_dict_cursor = use_dict_cursor
+    self._statement_id = -1
+    self._more_results = None
 
   @property
   def description(self):
@@ -314,13 +316,15 @@ class Cursor(object):
       raise InterfaceError('unknown JDBC type %d' % datatype)
     return converter(value)
 
-  def _AddBindVariablesToRequest(self, statement, args, bind_variable_factory):
+  def _AddBindVariablesToRequest(self, statement, args, bind_variable_factory,
+                                 direction=client_pb2.BindVariableProto.IN):
     """Add args to the request BindVariableProto list.
 
     Args:
       statement: The SQL statement.
       args: Sequence of arguments to turn into BindVariableProtos.
       bind_variable_factory: A callable which returns new BindVariableProtos.
+      direction: The direction to set for all variables in the request.
 
     Raises:
       InterfaceError: Unknown type used as a bind variable.
@@ -331,6 +335,7 @@ class Cursor(object):
     for i, arg in enumerate(args):
       bv = bind_variable_factory()
       bv.position = i + 1
+      bv.direction = direction
       if arg is None:
         bv.type = jdbc_type.NULL
       else:
@@ -353,7 +358,20 @@ class Cursor(object):
       OperationalError: RPC problem.
     """
     response = self._conn.MakeRequest('Exec', request)
-    result = response.result
+    return self._HandleResult(response.result)
+
+  def _HandleResult(self, result):
+    """Handle the ResultProto from an Exec/ExecOp call.
+
+    Args:
+      result: The client_pb2.ResultProto to handle.
+
+    Returns:
+      The given client_pb2.ResultProto.
+
+    Raises:
+      DatabaseError: A SQL exception occurred.
+    """
     if result.HasField('sql_exception'):
       raise DatabaseError('%d: %s' % (result.sql_exception.code,
                                       result.sql_exception.message))
@@ -394,6 +412,11 @@ class Cursor(object):
 
     if result.generated_keys:
       self.lastrowid = long(result.generated_keys[-1])
+
+    if result.HasField('statement_id'):
+      self._statement_id = result.statement_id
+
+    self._more_results = result.more_results
 
     return result
 
@@ -452,6 +475,67 @@ class Cursor(object):
     request.statement = _ConvertFormatToQmark(statement, args)
     result = self._DoExec(request)
     self._rowcount = sum(result.batch_rows_updated)
+
+  def callproc(self, procname, args=()):
+    """Calls a stored database procedure with the given name.
+
+    Args:
+      procname: A string, the name of the stored procedure.
+      args: A sequence of parameters to use with the procedure.
+
+    Returns:
+      A modified copy of the given input args. Input parameters are left
+      untouched, output and input/output parameters replaced with possibly new
+      values.
+
+    Raises:
+      InternalError: The cursor has been closed, or no statement has been
+        executed yet.
+      DatabaseError: A SQL exception occurred.
+      OperationalError: RPC problem.
+    """
+    self._CheckOpen()
+    request = sql_pb2.ExecRequest()
+    request.statement_type = sql_pb2.ExecRequest.CALLABLE_STATEMENT
+    request.statement = 'CALL %s(%s)' % (procname, ','.join('?' * len(args)))
+
+
+
+
+    self._AddBindVariablesToRequest(
+        request.statement, args, request.bind_variable.add,
+        direction=client_pb2.BindVariableProto.INOUT)
+    result = self._DoExec(request)
+
+
+    return_args = list(args[:])
+    for var in result.output_variable:
+      return_args[var.position - 1] = self._DecodeVariable(var.type, var.value)
+    return tuple(return_args)
+
+  def nextset(self):
+    """Advance to the next result set.
+
+    Returns:
+      True if there was an available set to advance to, otherwise, None.
+
+    Raises:
+      InternalError: The cursor has been closed, or no statement has been
+        executed yet.
+      DatabaseError: A SQL exception occurred.
+      OperationalError: RPC problem.
+    """
+    self._CheckOpen()
+    if self._more_results is None:
+      raise InternalError('nextset() called before execute')
+    if not self._more_results:
+      return None
+
+    request = sql_pb2.ExecOpRequest()
+    request.op.type = client_pb2.OpProto.NEXT_RESULT
+    request.op.statement_id = self._statement_id
+    self._HandleResult(self._conn.MakeRequest('ExecOp', request).result)
+    return True
 
   def fetchone(self):
     """Fetches the next row of a query result set.

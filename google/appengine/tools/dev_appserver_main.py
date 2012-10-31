@@ -111,6 +111,9 @@ Options:
   --port_sqlite_data         Converts the data from the file based datastore
                              stub to the new SQLite stub, one time use only.
                              (Default false)
+  --[enable|disable]_console Enables/disables the interactive console.
+                             (Default enabled if --address is unset,
+                              disabled if --address is set)
 """
 
 
@@ -221,6 +224,7 @@ ARG_TASK_RETRY_SECONDS = 'task_retry_seconds'
 ARG_TRUSTED = 'trusted'
 ARG_USE_SQLITE = 'use_sqlite'
 ARG_PORT_SQLITE_DATA = 'port_sqlite_data'
+ARG_CONSOLE = 'console'
 
 
 SDK_PATH = os.path.dirname(
@@ -332,7 +336,9 @@ LONG_OPTIONS = [
     'task_retry_seconds=',
     'trusted',
     'use_sqlite',
-    'port_sqlite_data'
+    'port_sqlite_data',
+    'enable_console',
+    'disable_console',
 ]
 
 
@@ -523,6 +529,13 @@ def ParseArguments(argv):
     if option == '--default_partition':
       option_dict[ARG_DEFAULT_PARTITION] = value
 
+    if option == '--enable_console':
+      option_dict[ARG_CONSOLE] = True
+    if option == '--disable_console':
+      option_dict[ARG_CONSOLE] = False
+
+  option_dict.setdefault(ARG_CONSOLE,
+                         option_dict[ARG_ADDRESS] == DEFAULT_ARGS[ARG_ADDRESS])
   return args, option_dict
 
 
@@ -652,6 +665,7 @@ def main(argv):
   static_caching = option_dict[ARG_STATIC_CACHING]
   persist_logs = option_dict[ARG_PERSIST_LOGS]
   skip_sdk_update_check = option_dict[ARG_SKIP_SDK_UPDATE_CHECK]
+  interactive_console = option_dict[ARG_CONSOLE]
 
   if (option_dict[ARG_ADMIN_CONSOLE_SERVER] != '' and
       not dev_process.IsSubprocess()):
@@ -692,7 +706,8 @@ def main(argv):
       static_caching=static_caching,
       default_partition=default_partition,
       persist_logs=persist_logs,
-      frontend_port=frontend_port)
+      frontend_port=frontend_port,
+      interactive_console=interactive_console)
 
   signal.signal(signal.SIGTERM, SigTermHandler)
 

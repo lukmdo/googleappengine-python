@@ -23,11 +23,11 @@
 
 import base64
 import datetime
+import hashlib
 import os
 import random
 import string
 import StringIO
-import sys
 import tempfile
 import time
 
@@ -230,7 +230,7 @@ class GoogleStorage(object):
     if request.has_max_keys():
       max_keys = request.max_keys()
     else:
-      max_keys = sys.maxint
+      max_keys = 2**31-1
     for gs_file_info in q.Get(max_keys):
       filename = gs_file_info['filename']
       if filename.startswith(fully_qualified_name):
@@ -448,6 +448,16 @@ class BlobstoreStorage(object):
       return f
     return self.data_files[filename]
 
+  def get_md5_from_blob(self, blobkey):
+    """Get md5 hexdigest of the blobfile with blobkey."""
+    try:
+      f = self.blob_storage.OpenBlob(blobkey)
+      file_md5 = hashlib.md5()
+      file_md5.update(f.read())
+      return file_md5.hexdigest()
+    finally:
+      f.close()
+
   def append(self, filename, data):
     """Append data to file."""
     self._get_data_file(filename).write(data)
@@ -582,6 +592,7 @@ class BlobstoreFile(object):
     blob_info['filename'] = self.blob_file_name
     blob_info['size'] = size
     blob_info['creation_handle'] = self.ticket
+    blob_info['md5_hash'] = self.file_storage.get_md5_from_blob(blob_key)
     datastore.Put(blob_info)
 
     blob_file = datastore.Entity('__BlobFileIndex__',

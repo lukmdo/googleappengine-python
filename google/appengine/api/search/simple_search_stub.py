@@ -440,8 +440,7 @@ class SimpleIndex(object):
 
   def _Evaluate(self, node, score=True):
     """Retrieve scored results for a search query."""
-    doc_match = document_matcher.DocumentMatcher(
-        node, self._parser, self._inverted_index)
+    doc_match = document_matcher.DocumentMatcher(node, self._inverted_index)
 
     matched_documents = doc_match.FilterDocuments(self._documents.itervalues())
     terms = self._CollectTerms(node)
@@ -470,17 +469,9 @@ class SimpleIndex(object):
 
     def SortKey(scored_doc):
       """Return the sort key for a document based on the request parameters."""
-      field = search_util.GetFieldInDocument(
-          scored_doc.document, sort_spec.sort_expression())
-      if not field:
-        return default_value
-
-      string_val = field.value().string_value()
-      if field.value().type() in search_util.NUMBER_DOCUMENT_FIELD_TYPES:
-        return float(string_val)
-      if field.value().type() is document_pb.FieldValue.DATE:
-        return search_util.EpochTime(search_util.DeserializeDate(string_val))
-      return string_val
+      return expression_evaluator.ExpressionEvaluator(
+          scored_doc, self._inverted_index).ValueOf(
+              sort_spec.sort_expression(), default_value=default_value)
 
     return sorted(docs, key=SortKey, reverse=sort_spec.sort_descending())
 
@@ -528,6 +519,11 @@ class SearchServiceStub(apiproxy_stub.APIProxyStub):
   NOT a subclass of SearchService itself.  Services are provided by
   the methods prefixed by "_Dynamic_".
   """
+
+
+
+
+  _VERSION = 1
 
   def __init__(self, service_name='search', index_file=None):
     """Constructor.
@@ -922,7 +918,7 @@ class SearchServiceStub(apiproxy_stub.APIProxyStub):
 
     pickler = pickle.Pickler(tmpfile, protocol=1)
     pickler.fast = True
-    pickler.dump(self.__indexes)
+    pickler.dump((self._VERSION, self.__indexes))
 
     tmpfile.close()
 
@@ -943,7 +939,12 @@ class SearchServiceStub(apiproxy_stub.APIProxyStub):
     self.__index_file_lock.acquire()
     try:
       if os.path.isfile(self.__index_file):
-        return pickle.load(open(self.__index_file, 'rb'))
+        version, indexes = pickle.load(open(self.__index_file, 'rb'))
+        if version == self._VERSION:
+          return indexes
+        logging.warning(
+            'Saved search indexes are not compatible with this version of the '
+            'SDK. Search indexes have been cleared.')
       else:
         logging.warning(
             'Could not read search indexes from %s', self.__index_file)
